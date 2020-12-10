@@ -23,4 +23,7 @@ else:
 	config.add_section('RECT')
 	config['RECT']['pt1'] = pt1
 	config['RECT']['pt2'] = pt2
-	config.write(open('python-test.ini', 'w'))
+	try:
+		config.write(open('python-test.ini', 'w'))
+	except:
+		print('WARNING: config write fail!')
