@@ -20,6 +20,6 @@ print(f'bool(False) = {false_bool} ; type(false_bool) = {type(false_bool)}')
  
 # bool(str)
 not_empty_str_bool = bool('not empty')
-print(f'bool(\'not empty\') = {not_empty_str_bool}, type(not_empty_str_bool) = {type(not_empty_str_bool)}')
+print(f'bool(\'not empty\') = {not_empty_str_bool} ; type(not_empty_str_bool) = {type(not_empty_str_bool)}')
 empty_str_bool = bool('')
-print(f'bool(\'\') = {empty_str_bool}, type(empty_str_bool) = {type(empty_str_bool)}')
+print(f'bool(\'\') = {empty_str_bool} ; type(empty_str_bool) = {type(empty_str_bool)}')
