@@ -1,0 +1,12 @@
+; Database Connection information
+[DB]
+user = user_name
+password = passowrd
+host_ip = 123.123.123.123
+dbname = database_name
+port = 5432
+
+; 기타 부가 설정 정보
+[OPTION]
+; 센서 데이터 수집 확인 기준 시간 (분)
+data_check_minute = 20

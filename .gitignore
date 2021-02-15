@@ -1,0 +1,3 @@
+__pycache__/
+logs/
+db/mariadb/postgres.ini

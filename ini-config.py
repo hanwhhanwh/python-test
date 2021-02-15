@@ -2,7 +2,7 @@
 import configparser
 
 config = configparser.ConfigParser()
-config.read('python-test.ini')
+config.read('python-test.ini', encoding="UTF-8")
 sections = config.sections()
 print(sections)
 
