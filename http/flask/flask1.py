@@ -1,5 +1,5 @@
 # 첫 번째 flask 예제
-# reference : 
+# reference : https://code.visualstudio.com/docs/python/tutorial-flask
 from flask import Flask
 from datetime import datetime
 import re
@@ -28,3 +28,7 @@ def hello_there(name):
 
     content = "Hello there, " + clean_name + "! It's " + formatted_now
     return content
+
+
+if __name__ == '__main__':
+    app.run()

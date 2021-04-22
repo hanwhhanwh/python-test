@@ -1,3 +1,4 @@
+# reference : https://wikidocs.net/16074
 class Language:
     default_language = "English"
 
@@ -25,6 +26,11 @@ b = KoreanLanguage.class_my_language()
 
 a.print_language()
 b.print_language()
+
+
+
+
+
 
 """ 실행결과 >>>
 나의 언어는 English
