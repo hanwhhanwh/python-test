@@ -2,6 +2,7 @@ from flask import Blueprint
 
 from .user import CreateUser
 from .addr import Addr
+from .hello import hello
 
 
 # RESTful API controllers
@@ -11,7 +12,5 @@ def register_apis(api):
 
 
 # normal controllers : by blueprint
-def create_blueprint(name) -> Blueprint:
-    blueprint = Blueprint(name, __name__)
-
-    return blueprint
+def register_blueprint(app):
+    app.register_blueprint(hello)
