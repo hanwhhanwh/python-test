@@ -5,6 +5,10 @@ import datetime as dt
 # value_error = dt.datetime.strptime('02-4-23', '%y-%m-%D')
 # ValueError: 'D' is a bad directive in format '%y-%m-%D'
 
+converted_day = dt.datetime.strptime('02-4-23', '%y-%M-%d')
+print(converted_day)
+# OK : 2002-01-23 00:04:00 ; %M은 분으로, 형식 지정이 잘못되어 논리적 오류임
+
 converted_day = dt.datetime.strptime('02-4-23', '%y-%m-%d')
 print(converted_day)
 # OK : 2002-04-23 00:00:00
@@ -21,6 +25,3 @@ print(converted_day)
 
 # converted_day = dt.datetime.strptime('0124-14-23', '%Y-%m-%d')
 # ValueError: time data '0124-14-23' does not match format '%Y-%m-%d'
-
-
-
