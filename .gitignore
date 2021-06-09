@@ -1,4 +1,5 @@
-__pycache__/
+__pycache__
+.vscode
 logs/
 db/mariadb/postgres.ini
 http/flask/mvc-demo1/app/config/config.py
