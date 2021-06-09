@@ -15,6 +15,10 @@ print('bytesarray = ', bytesarray3)
 print('len3 = ', len(bytesarray3))
 bytesarray3.extend(b'{\x00\x00\x00')
 print('len4 = ', len(bytesarray3))
+bytes4 = bytes(bytesarray3)
+print('bytes4 = ', bytes4)
+# bytes4.extend(b'{\x00\x00\x00')
+# AttributeError: 'bytes' object has no attribute 'extend'
 """ result =>
 len() function example
 len1 =  8
@@ -23,8 +27,8 @@ len2 =  32
 bytesarray =  bytearray(b'{\x00\x00\x00_\r\x00\x00\xfc\x00\x00\x00\xad\x0c\x00\x00V\x08\x00\x00{\x00\x00\x00-\x12\x00\x00{\x00\x00\x00')
 len3 =  32
 len4 =  36
+bytes4 =  b'{\x00\x00\x00_\r\x00\x00\xfc\x00\x00\x00\xad\x0c\x00\x00V\x08\x00\x00{\x00\x00\x00-\x12\x00\x00{\x00\x00\x00{\x00\x00\x00'
 """
-
 
 print('count() method example')
 array1 = array.array('i', [123, 3423, 252, 3245, 2134, 123, 4653, 123])
