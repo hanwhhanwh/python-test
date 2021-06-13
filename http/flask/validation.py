@@ -4,7 +4,7 @@ from jsonschema import validate
 schema = {
 	"type" : "object",
 	"properties" : {
-		"price" : {"type" : "number"},
+		"price" : {"type" : "number", "minimum": 0, "maximum": 30},
 		"name" : {"type" : "string"},
 	},
 }
