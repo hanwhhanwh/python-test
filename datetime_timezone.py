@@ -17,3 +17,7 @@ print(now_none)
 print(now_none.tzinfo)
 print('to UTC = ', now_none.astimezone(dt.timezone.utc))
 print('to KST = ', now_none.astimezone(kst_timezone))
+
+
+wrong_day1 = dt.datetime.strptime('02-4-23', '%y-%m-%d')
+print(wrong_day1)
