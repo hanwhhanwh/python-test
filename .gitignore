@@ -3,3 +3,4 @@ __pycache__
 logs/
 db/mariadb/postgres.ini
 http/flask/mvc-demo1/app/config/config.py
+net/socket/test-driver/config/test_driver_config.py
