@@ -20,3 +20,15 @@ b.write(b'23094')
 print(b.getvalue()) # b'2309423094'
 b.close()
 #b.write(b'23094') # close된 버퍼에 쓰려고 하면 오류 발생 -> ValueError: I/O operation on closed file.
+
+chars = bytes(10)
+buf = io.StringIO()
+for ch in chars:
+	buf.write(f'{ch:02x} ')
+result = buf.getvalue().encode()
+print(result)
+
+resutl = ''
+for ch in chars:
+	result = result + hex(ch)[2:4] + ' '
+print(result)
