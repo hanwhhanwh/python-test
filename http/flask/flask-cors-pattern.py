@@ -4,7 +4,7 @@ from flask_cors import CORS
 app = Flask(__name__)
 
 api_v1 = Blueprint('API_v1', __name__)
-CORS(api_v1) # enable CORS on the API_v1 blue print
+CORS(app, resources=r'/api/*')
 
 @app.route("/")
 def helloWorld():

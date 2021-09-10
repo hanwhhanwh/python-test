@@ -1,16 +1,16 @@
 from flask import Flask, Blueprint, jsonify
-from flask_cors import CORS
+from flask_cors import cross_origin
 
 app = Flask(__name__)
 
 api_v1 = Blueprint('API_v1', __name__)
-CORS(api_v1) # enable CORS on the API_v1 blue print
 
 @app.route("/")
 def helloWorld():
 	return "Hello, world!"
 
 @api_v1.route("/api/v1/users")
+@cross_origin()
 def list_users():
 	return jsonify(user="hbesthee@naver.com")
 
