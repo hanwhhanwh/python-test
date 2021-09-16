@@ -1,6 +1,6 @@
 # 파일 및 콘솔 로깅 처리를 위한 라이브러리 소스
 # date: 2021-06-08
-# author: hanwh@hunature.net
+# author: hbesthee@naver.com
 #-*- coding: utf-8 -*-
 # use tab char size: 4
 
@@ -23,7 +23,8 @@ class FileLogger:
 			, log_path = './logs'
 			, log_filename = 'logger'
 			, log_ext = '.log'
-			, log_level = logging.WARNING):
+			, log_level = logging.WARNING
+			, log_console = True):
 		"""Logger 클래스를 초기화합니다.
 
 		Args:
@@ -31,12 +32,14 @@ class FileLogger:
 			log_filename (string): 로깅 파일 이름 ; "logger"
 			log_ext (string): 로깅 파일 기본 확장자 ; ".log"
 			log_level : 로깅 레벨 = logging.DEBUG (10), logging.INFO (20), logging.WARNING (30), logging.ERROR (40), logging.CRITICAL (50)
+			log_console (boolean): 콘솔로도 로깅 출력 여부
 		"""
 
 		self.log_path		= log_path
 		self.log_filename	= log_filename
 		self.log_ext		= log_ext
 		self.log_level		= log_level
+		self.log_console	= log_console
 
 		# folder create
 		if not os.path.exists(self.log_path):
@@ -58,18 +61,20 @@ class FileLogger:
 		# Make file handler
 		LOG_FILENAME = self.log_path + '/' + self.log_filename + self.log_ext
 		file_handler = logging.handlers.TimedRotatingFileHandler(
-			filename = LOG_FILENAME, when='midnight', interval=1
-			, backupCount=100, encoding='utf-8'
+			filename = LOG_FILENAME, when = 'midnight', interval = 1
+			, backupCount = 100, encoding = 'utf-8'
 		) # Rotate at midnight
 		file_handler.suffix = "%Y%m%d" # add file date
 
-		stream_handler= logging.StreamHandler()
-		log.addHandler(stream_handler)
-		log.addHandler(file_handler)
 		formatter = logging.Formatter(
-			'%(asctime)s - %(levelname)s - %(message)s'
+			'%(asctime)s %(levelname)s %(lineno)d] %(message)s'
 		)
+		log.addHandler(file_handler)
 		file_handler.setFormatter(formatter)
+		if (self.log_console == True):
+			stream_handler = logging.StreamHandler()
+			log.addHandler(stream_handler)
+			stream_handler.setFormatter(formatter)
 		#log.debug('created')
 
 		return log
@@ -98,6 +103,47 @@ class FileLogger:
 	def warning(self, msg, *args, **kwargs):
 		if self.__log != None:
 			self.__log.warning(msg, *args, **kwargs)
+
+
+def createLogger(log_path = './logs'
+			, log_filename = 'logger'
+			, log_ext = '.log'
+			, log_level = logging.WARNING
+			, log_console = True):
+	"""Logger 클래스를 초기화합니다.
+
+	Args:
+		log_path (string): 로깅 파일이 쌓이는 폴더 경로 ; "./logs"
+		log_filename (string): 로깅 파일 이름 ; "logger"
+		log_ext (string): 로깅 파일 기본 확장자 ; ".log"
+		log_level : 로깅 레벨 = logging.DEBUG (10), logging.INFO (20), logging.WARNING (30), logging.ERROR (40), logging.CRITICAL (50)
+		log_console (boolean): 콘솔로도 로깅 출력 여부
+	"""
+
+	# intialize logger
+	log = logging.getLogger(log_filename)
+	log.setLevel(log_level) 
+
+	# Make file handler
+	LOG_FILENAME = log_path + '/' + log_filename + log_ext
+	file_handler = logging.handlers.TimedRotatingFileHandler(
+		filename = LOG_FILENAME, when = 'midnight', interval = 1
+		, backupCount = 100, encoding = 'utf-8'
+	) # Rotate at midnight
+	file_handler.suffix = "%Y%m%d" # add file date
+
+	formatter = logging.Formatter(
+		'%(asctime)s %(levelname)s %(lineno)d] %(message)s'
+	)
+	log.addHandler(file_handler)
+	file_handler.setFormatter(formatter)
+	if (log_console == True):
+		stream_handler = logging.StreamHandler()
+		log.addHandler(stream_handler)
+		stream_handler.setFormatter(formatter)
+	#log.debug('created')
+
+	return log
 
 
 # Testing at shell
