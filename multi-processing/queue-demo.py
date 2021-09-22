@@ -3,6 +3,7 @@
 from multiprocessing import Process, Queue
 
 def f(q):
+	print('in subprocess')
 	q.put([42, None, 'hello'])
 
 if __name__ == '__main__':
@@ -13,5 +14,7 @@ if __name__ == '__main__':
 	p.start()
 	if not q.empty(): # q is empty, then no print
 		print(q.get_nowait())
+	print('in main-process')
+	print(q.get())
 	p.join()
 	print(q.get_nowait()) # prints [42, None, 'hello']
