@@ -9,5 +9,8 @@
 	socket.on('connect', function() {
 		socket.emit('my event', {data: 'I\'m connected!'});
 	});
+	socket.on('REFRESH', function(msg) {
+		console.log('REFRESH received : ' + msg);
+	});
 </script>
 </html>

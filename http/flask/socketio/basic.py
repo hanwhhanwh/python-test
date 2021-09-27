@@ -1,6 +1,6 @@
 # reference : https://flask-socketio.readthedocs.io/en/latest/getting_started.html
 from flask import Flask, render_template
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
@@ -19,6 +19,7 @@ def handle_message(data):
 @socketio.on('my event')
 def handle_my_custom_event(json):
 	print('received json: ' + str(json))
+	emit('REFRESH', 'SMA')
 
 
 if __name__ == '__main__':
