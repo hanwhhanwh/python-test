@@ -8,7 +8,7 @@ socketio = SocketIO(app)
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+	return render_template('index.html')
 
 
 @socketio.on('message')
@@ -23,4 +23,4 @@ def handle_my_custom_event(json):
 
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=80, use_reloader=False)
+	socketio.run(app, host='0.0.0.0', port=80, use_reloader=False)
