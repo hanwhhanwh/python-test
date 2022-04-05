@@ -1,4 +1,4 @@
-# camera capture example (with fps)
+# blackbox example
 # date: 2022-04-04
 # make: hbesthee@naver.com
 
@@ -6,14 +6,19 @@ import cv2
 import time
 
 CAMERA_ID = 0
+FRAME_WIDTH = 640
+FRAME_HEIGTH = 480
 
 capture = cv2.VideoCapture(CAMERA_ID)
 if capture.isOpened() == False: # 카메라 정상상태 확인
 	print(f'Can\'t open the Camera({CAMERA_ID})')
 	exit()
 
-capture.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 960)
+capture.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+capture.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGTH)
+
+# Define the codec and create VideoWriter object. The output is stored in 'output.mp4' file.
+out = cv2.VideoWriter('output.mp4', cv2.VideoWriter_fourcc(*'XVID'), 30, (FRAME_WIDTH, FRAME_HEIGTH))
 
 prev_time = 0
 total_frames = 0
@@ -23,6 +28,9 @@ while cv2.waitKey(1) < 0:
 
 	ret, frame = capture.read()
 	total_frames = total_frames + 1
+
+	# Write the frame into the file (VideoWriter)
+	out.write(frame)
 
 	term = curr_time - prev_time
 	fps = 1 / term
@@ -37,5 +45,6 @@ end_time = time.time()
 fps = total_frames / (start_time - end_time)
 print(f'total_frames = {total_frames},  avg FPS = {fps:.2f}')
 
+out.release()
 capture.release()
 cv2.destroyAllWindows()
