@@ -14,6 +14,8 @@ CAMERA_ID: Final		= 0
 FRAME_WIDTH: Final		= 640
 FRAME_HEIGTH: Final		= 480
 
+global_frame = None
+
 
 class VideoWriterThread(Thread):
 	""" 영상 프레임 저장 스레드 """
@@ -38,6 +40,7 @@ class VideoWriterThread(Thread):
 		prev_time = 0
 		total_frames = 0
 		start_time = time.time()
+		global global_frame
 
 		while ( (self._stopped == False) and (self._out != None) ):
 			curr_time = time.time()
@@ -51,11 +54,11 @@ class VideoWriterThread(Thread):
 				fps_string = f'term = {term:.3f},  FPS = {fps:.2f}'
 				print(fps_string)
 
-				cv2.putText(frame, fps_string, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 255))
+				cv2.putText(global_frame, fps_string, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 255))
 
 				# Write the frame into the file (VideoWriter)
 				# if (frame != None):
-				self._out.write(frame)
+				self._out.write(global_frame)
 			except Exception as e:
 				if (isinstance(e, Empty) == False): # 실제 오류 발생
 					print('queue error :', e)
@@ -91,15 +94,15 @@ if __name__ == '__main__':
 
 	while cv2.waitKey(1) < 0:
 
-		ret, frame = capture.read()
+		ret, global_frame = capture.read()
 
 		# Write the frame into the file (VideoWriter)
 		# out.write(frame)
-		writer_thread.write(frame)
+		writer_thread.write(1)
 
-		time.sleep(0.01)
+		time.sleep(0.02)
 
-		cv2.imshow("VideoFrame", frame)
+		cv2.imshow("VideoFrame", global_frame)
 
 	writer_thread.stop()
 
