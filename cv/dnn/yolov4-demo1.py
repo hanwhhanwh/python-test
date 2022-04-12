@@ -1,3 +1,7 @@
+# Yolo v4 example (threading)
+# date: 2022-04-12
+# make: hbesthee@naver.com
+ 
 import cv2
 import time
 
