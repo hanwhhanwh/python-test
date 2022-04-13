@@ -10,7 +10,8 @@
 			"request": "launch",
 			"program": "${file}",
 			"justMyCode": false,
-			"console": "integratedTerminal"
+			"console": "integratedTerminal",
+			"cwd": "${fileDirname}"
 		},
 		{
 			"name": "Python: Flask",
