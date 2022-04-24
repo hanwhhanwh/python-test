@@ -4,9 +4,26 @@
 #-*- coding: utf-8 -*-
 # use tab char size: 4
 
+from os import path, remove, rename
+
+import gzip
 import logging
 import logging.handlers
 import os
+
+
+class GZipRotator:
+	""" 로그를 분할 처리할 때 로그 파일을 압축하는데 이용하는 Rotator """
+
+	def __call__(self, source, dest):
+		if (path.exists(source) and path.exists(dest)):
+			rename(source, dest)
+			f_in = open(dest, 'rb')
+			f_out = gzip.open(f'{dest}.gz', 'wb')
+			f_out.writelines(f_in)
+			f_out.close()
+			f_in.close()
+			remove(dest)
 
 
 class FileLogger:
@@ -76,6 +93,7 @@ class FileLogger:
 			log.addHandler(stream_handler)
 			stream_handler.setFormatter(formatter)
 		#log.debug('created')
+		file_handler.rotator = GZipRotator() # 압축 분할 처리
 
 		return log
 
