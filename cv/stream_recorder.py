@@ -4,8 +4,11 @@
 
 from _queue import Empty
 from datetime import datetime
+from glob import glob
 from multiprocessing import Process, Queue
+from shutil import disk_usage
 # from typing import Final
+from threading import Thread
 
 import cv2
 import io
@@ -19,6 +22,28 @@ RECORD_PER_30MIN		= 1800
 RECORD_PER_HOUR			= 3600
 RECORD_PER_2HOUR		= 7200
 
+
+def do_guarentee_space(recording_path, guarentee_space = 4) -> None:
+	""" 영상 저장 폴더에 대하여, 디스크 여유 공간 확보 작업을 수행합니다. 
+		디스크의 공간이 부족한 경우, 오래된 영상부터 순차적으로 삭제합니다.
+		recording_path : 영상 저장 폴더
+		guarentee_space : 확보할 디스크 여유 공간의 크기값 ; 기본 4GB
+	"""
+	_, _, free = disk_usage(recording_path)
+	guarentee_size = guarentee_space * (2 ** 30)
+	if (free < guarentee_size ):
+		# 여유공간 확보를 위하여, 영상 파일을 삭제 처리함
+
+		file_list = glob(f'{recording_path}/*.mp4')
+		file_list.sort() # 이름순 정렬
+		for file_name in file_list:
+			# file_basename = os.path.basename(file_name)
+			file_size = os.path.getsize(file_name)
+			os.remove(file_name)
+			print(f'deleted file : {file_name} : {file_size:,}')
+			free += file_size
+			if (free > guarentee_size ):
+				break
 
 
 class StreamRecorder(Process):
@@ -145,7 +170,11 @@ if __name__ == '__main__':
 	FRAME_WIDTH			= 640
 	FRAME_HEIGTH		= 480
 
-	guarentee_space = 4 # 최소 4GB 용량 확보
+
+	def do_guarentee_space_thread_handler(recording_path, guarentee_space) -> None:
+		while (True):
+			do_guarentee_space(recording_path, guarentee_space)
+			time.sleep(60) # 30분 동안 대기
 
 	capture = cv2.VideoCapture(CAMERA_ID)
 	if capture.isOpened() == False: # 카메라 정상상태 확인
@@ -158,16 +187,21 @@ if __name__ == '__main__':
 	recorder_process = StreamRecorder('output', video_codec = 'mp4v'
 		, frame_size = (FRAME_WIDTH, FRAME_HEIGTH))
 
-	work_path = os.getcwd()
-	recorder_process.set_recording_path(f'{work_path}/video')
+	recording_path = os.getcwd() + '/video'
+	recorder_process.set_recording_path(recording_path)
 	recorder_process.start()
+
+	guarentee_space = 23 # 최소 확보 용량
+	guarentee_space_thread = Thread(target = do_guarentee_space_thread_handler
+		, args = (recording_path, guarentee_space))
+	guarentee_space_thread.start()
+
 
 	while cv2.waitKey(1) < 0:
 
 		ret, frame = capture.read()
 
-		# Write the frame into the file (VideoWriter)
-		# out.write(frame)
+		# Write the frame into the StreamRecorder
 		recorder_process.write(frame)
 
 		if (os.name == "nt"):
@@ -175,6 +209,7 @@ if __name__ == '__main__':
 
 	recorder_process.stop()
 	recorder_process.join()
+	guarentee_space_thread.join()
 
 	capture.release()
 	if (os.name == "nt"):
