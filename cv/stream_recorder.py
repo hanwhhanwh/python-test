@@ -7,6 +7,7 @@ from datetime import datetime
 from glob import glob
 from multiprocessing import Process, Queue
 from shutil import disk_usage
+from struct import pack
 # from typing import Final
 from threading import Thread
 
@@ -17,7 +18,7 @@ import time
 import traceback
 
 
-RECORD_PER_10MIN		= 600
+RECORD_PER_10MIN		= 60
 RECORD_PER_30MIN		= 1800
 RECORD_PER_HOUR			= 3600
 RECORD_PER_2HOUR		= 7200
@@ -82,6 +83,7 @@ class StreamRecorder(Process):
 		total_frame = 0
 		start_time = time.time()		
 		prev_time = 0
+		video_index_file = None
 		while ( True ):
 			try:
 				frame, frame_index = self._q.get()
@@ -93,6 +95,8 @@ class StreamRecorder(Process):
 				if ( (self._recording_term > 0) and (start_time + self._recording_term) < current_time ):
 					if (self._out != None):
 						self._out.release()
+					if (video_index_file != None):
+						video_index_file.close()
 					self._out = None
 					prev_time = start_time
 					start_time = current_time
@@ -112,7 +116,9 @@ class StreamRecorder(Process):
 							self._out = cv2.VideoWriter(f'appsrc ! videoconvert ! video/x-raw ! x264enc tune=zerolatency bitrate=1024 speed-preset=2 ! mp4mux ! filesink location={video_file_name}'
 								, cv2.CAP_GSTREAMER, 0, self._fps, self._frame_size)
 							# speed-preset = 2 (superfast)
+						video_index_file = open(f'{video_file_name}.idx', 'wb')
 				except Exception as ex:
+					video_index_file = None
 					errors = io.StringIO()
 					traceback.print_exc(file=errors)
 					contents = str(errors.getvalue())
@@ -122,6 +128,7 @@ class StreamRecorder(Process):
 				self.preprocess_frame(frame) # 영상 처리
 
 				self._out.write(frame) # 영상 저장
+				video_index_file.write(pack('i', frame_index)) # 영상 프레임 인덱스 정보 저장
 				total_frame += 1
 			except Exception as e:
 				if (frame_index == -2):
@@ -174,7 +181,7 @@ if __name__ == '__main__':
 	def do_guarentee_space_thread_handler(recording_path, guarentee_space) -> None:
 		while (True):
 			do_guarentee_space(recording_path, guarentee_space)
-			time.sleep(60) # 30분 동안 대기
+			time.sleep(1800) # 30분 동안 대기
 
 	capture = cv2.VideoCapture(CAMERA_ID)
 	if capture.isOpened() == False: # 카메라 정상상태 확인
@@ -191,18 +198,19 @@ if __name__ == '__main__':
 	recorder_process.set_recording_path(recording_path)
 	recorder_process.start()
 
-	guarentee_space = 23 # 최소 확보 용량
+	guarentee_space = 23 # 최소 확보 용량 (단위 : GB)
 	guarentee_space_thread = Thread(target = do_guarentee_space_thread_handler
 		, args = (recording_path, guarentee_space))
 	guarentee_space_thread.start()
 
-
+	total_frame = 0
 	while cv2.waitKey(1) < 0:
 
 		ret, frame = capture.read()
+		total_frame += 1
 
 		# Write the frame into the StreamRecorder
-		recorder_process.write(frame)
+		recorder_process.write(frame, total_frame)
 
 		if (os.name == "nt"):
 			cv2.imshow("VideoStream", frame)
