@@ -5,7 +5,7 @@
 from _queue import Empty
 from datetime import datetime
 from multiprocessing import Process, Queue
-from typing import Final
+# from typing import Final
 
 import cv2
 import io
@@ -14,10 +14,10 @@ import time
 import traceback
 
 
-RECORD_PER_10MIN: Final		= 600
-RECORD_PER_30MIN: Final		= 1800
-RECORD_PER_HOUR: Final		= 3600
-RECORD_PER_2HOUR: Final		= 7200
+RECORD_PER_10MIN		= 600
+RECORD_PER_30MIN		= 1800
+RECORD_PER_HOUR			= 3600
+RECORD_PER_2HOUR		= 7200
 
 
 
@@ -116,9 +116,9 @@ class StreamRecorder(Process):
 
 
 if __name__ == '__main__':
-	CAMERA_ID: Final		= 0
-	FRAME_WIDTH: Final		= 640
-	FRAME_HEIGTH: Final		= 480
+	CAMERA_ID			= 0
+	FRAME_WIDTH			= 640
+	FRAME_HEIGTH		= 480
 
 
 	capture = cv2.VideoCapture(CAMERA_ID)
@@ -142,9 +142,9 @@ if __name__ == '__main__':
 
 		time.sleep(0.02)
 
-		cv2.imshow("VideoStream", frame)
+		# cv2.imshow("VideoStream", frame)
 
 	recorder_process.stop()
 
 	capture.release()
-	cv2.destroyAllWindows()
+	# cv2.destroyAllWindows()
