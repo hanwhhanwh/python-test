@@ -41,6 +41,12 @@ def do_guarentee_space(recording_path, guarentee_space = 4) -> None:
 			# file_basename = os.path.basename(file_name)
 			file_size = os.path.getsize(file_name)
 			os.remove(file_name)
+			video_index_file_name = f'{file_name}.idx'
+			if (os.path.exists(video_index_file_name)):
+				os.remove(video_index_file_name)
+			detection_result_file_name = f'{file_name}.rst'
+			if (os.path.exists(detection_result_file_name)):
+				os.remove(detection_result_file_name)
 			print(f'deleted file : {file_name} : {file_size:,}')
 			free += file_size
 			if (free > guarentee_size ):
