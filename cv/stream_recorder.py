@@ -50,7 +50,6 @@ class StreamRecorder(Process):
 
 	def run(self):
 		""" 영상 저장 프로세스 실행부 """
-		self._stopped = False
 		if (not os.path.exists(self._recording_path)):
 			os.makedirs(self._recording_path) # 영상 저장 폴더가 없으면 생성
 
@@ -62,7 +61,7 @@ class StreamRecorder(Process):
 			try:
 				frame, frame_index = self._q.get()
 
-				if (self._stopped):
+				if (frame_index == -2):
 					break
 
 				current_time = time.time()
@@ -100,6 +99,9 @@ class StreamRecorder(Process):
 				self._out.write(frame) # 영상 저장
 				total_frame += 1
 			except Exception as e:
+				if (frame_index == -2):
+					break
+
 				if (isinstance(e, Empty) == False): # 실제 오류 발생
 					print('recorder error :', e)
 					try:
@@ -114,6 +116,7 @@ class StreamRecorder(Process):
 
 		if (self._out != None):
 			self._out.release()
+			self._out = None
 
 
 	def set_recording_path(self, recording_path) -> None:
@@ -125,8 +128,7 @@ class StreamRecorder(Process):
 
 	def stop(self) -> None:
 		""" 프로세스를 종료합니다. """
-		self._stopped = True
-		self._q.put(None)
+		self._q.put((None, -2))
 
 
 	def write(self, frame, frame_index = -1) -> int:
@@ -143,6 +145,7 @@ if __name__ == '__main__':
 	FRAME_WIDTH			= 640
 	FRAME_HEIGTH		= 480
 
+	guarentee_space = 4 # 최소 4GB 용량 확보
 
 	capture = cv2.VideoCapture(CAMERA_ID)
 	if capture.isOpened() == False: # 카메라 정상상태 확인
@@ -167,11 +170,12 @@ if __name__ == '__main__':
 		# out.write(frame)
 		recorder_process.write(frame)
 
-		time.sleep(0.02)
-
-		cv2.imshow("VideoStream", frame)
+		if (os.name == "nt"):
+			cv2.imshow("VideoStream", frame)
 
 	recorder_process.stop()
+	recorder_process.join()
 
 	capture.release()
-	# cv2.destroyAllWindows()
+	if (os.name == "nt"):
+		cv2.destroyAllWindows()
