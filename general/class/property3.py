@@ -22,6 +22,11 @@ class Geeks:
 		print("setter method called")
 		self._age = a
 
+	# a deleter function
+	@age.deleter
+	def age(self, a):
+		del self._age
+
 mark = Geeks()
 
 mark.age = 19
