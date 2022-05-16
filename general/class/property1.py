@@ -6,15 +6,15 @@
 
 class Geek:
 	def __init__(self, age = 0):
-		self._age = age
+		self.__age = age
 	
 	# getter method
 	def get_age(self):
-		return self._age
+		return self.__age
 	
 	# setter method
 	def set_age(self, x):
-		self._age = x
+		self.__age = x
 
 raj = Geek()
 
@@ -24,7 +24,7 @@ raj.set_age(21)
 # retrieving age using getter
 print(raj.get_age())
 
-print(raj._age)
+print(raj._Geek__age)
 """ Result
 21
 21

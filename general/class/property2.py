@@ -5,21 +5,21 @@
 
 class Geeks:
 	def __init__(self):
-		self._age = 0
+		self.__age = 0
 	
 	# function to get value of _age
 	def get_age(self):
 		print("getter method called")
-		return self._age
+		return self.__age
 	
 	# function to set value of _age
 	def set_age(self, a):
 		print("setter method called")
-		self._age = a
+		self.__age = a
 
 	# function to delete _age attribute
 	def del_age(self):
-		del self._age
+		del self.__age
 	
 	age = property(get_age, set_age, del_age)
 
@@ -28,6 +28,8 @@ mark = Geeks()
 mark.age = 10
 
 print(mark.age)
+print(mark.__dict__)
+print(f'has age property : {hasattr(mark, "age")}')
 
 """ Result
 setter method called

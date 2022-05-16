@@ -16,7 +16,7 @@ class Geeks:
 	
 	# a setter function
 	@age.setter
-	def age(self, a):
+	def age_setter(self, a):
 		if(a < 18):
 			raise ValueError("Sorry you age is below eligibility criteria")
 		print("setter method called")
