@@ -70,21 +70,10 @@ class IniConfigBase:
 		self.load(config)
 
 
-	def save(self, ini_file_name = None, is_backup = True) -> None:
+	def save(self, config) -> None:
 		""" 현재 설정 정보를 저장합니다.
-		is_backup 설정이 되어 있으면 기존 설정 파일을 현재시각 정보로 백업합니다. """
-		if (ini_file_name == None):
-			ini_file_name = self._ini_file_name
-		self._is_modified = False
-
-		if (path.exists(ini_file_name)):
-			if (is_backup):
-				surfix = strftime('%Y%m%d_%I%M%S', localtime())
-				rename(ini_file_name, f'{ini_file_name}.{surfix}')
-			else:
-				remove(ini_file_name)
-
-		config = ConfigParser()
+					@param config configParser 객체
+		"""
 		config.add_section(self._section_name)
 		for class_variable_name in self.__dict__.keys():
 			if ( class_variable_name.startswith('_') or class_variable_name.startswith('__') ):
@@ -100,6 +89,25 @@ class IniConfigBase:
 					str_value = None
 			if ((str_value != None) and (value != None) ):
 				config.set(self._section_name, class_variable_name, str_value)
+
+
+	def save(self, ini_file_name = None, is_backup = True) -> None:
+		""" 현재 설정 정보를 저장합니다.
+		is_backup 설정이 되어 있으면 기존 설정 파일을 현재시각 정보로 백업합니다. """
+		if (ini_file_name == None):
+			ini_file_name = self._ini_file_name
+		self._is_modified = False
+
+		if (path.exists(ini_file_name)):
+			if (is_backup):
+				surfix = strftime('%Y%m%d_%I%M%S', localtime())
+				rename(ini_file_name, f'{ini_file_name}.{surfix}')
+			else:
+				remove(ini_file_name)
+
+		config = ConfigParser()
+
+		self.save(config)
 
 		with open(ini_file_name, 'w') as configfile:
 			config.write(configfile)
