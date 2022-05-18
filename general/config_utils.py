@@ -22,7 +22,7 @@ class IniConfigBase:
 		pass
 
 
-	def load(self, config) -> None:
+	def load_config(self, config) -> None:
 		""" 지정한 configParser 객체로부터 설정값을 읽어 옵니다.
 			속성에 해당하는 설정이 없으면,
 			self.__defaults에 지정된 값으로 기본값을 할당합니다.
@@ -67,10 +67,10 @@ class IniConfigBase:
 		config = ConfigParser()
 		config.read(ini_file_name, encoding = "UTF-8")
 
-		self.load(config)
+		self.load_config(config)
 
 
-	def save(self, config) -> None:
+	def save_config(self, config) -> None:
 		""" 현재 설정 정보를 저장합니다.
 					@param config configParser 객체
 		"""
@@ -107,7 +107,7 @@ class IniConfigBase:
 
 		config = ConfigParser()
 
-		self.save(config)
+		self.save_config(config)
 
 		with open(ini_file_name, 'w') as configfile:
 			config.write(configfile)
@@ -116,6 +116,8 @@ class IniConfigBase:
 
 if (__name__ == '__main__'):
 
+	import numpy as np
+
 	class MyOption(IniConfigBase):
 		def __init__(self, runpath = None) -> None:
 			# IniConfigBase.__init__(None)
@@ -123,15 +125,38 @@ if (__name__ == '__main__'):
 			self.top = '200'
 			self.width = '640'
 			self.height = '480'
+			self._polygon = np.ndarray((8,))
 			super().__init__(runpath = runpath)
 			print(self._ini_file_name)
-			self._defaults = { 'left': '150', 'top': '150' }
+			self._defaults = { 'left': '150', 'top': '150'
+				, '_polygon': '0,0,640,0,640,480,0,480'
+			}
+
+		def get_polygon(self):
+			""" polygon 영역 정보를 반환합니다. """
+			return self._polygon[:]
+
+
+		def load_config(self, config) -> None:
+			super().load_config(config)
+			option_value = config.get(self._section_name, '_polygon', fallback = self._defaults.get('_polygon'))
+			if ( (option_value != None) and (isinstance(option_value, str)) ):
+				self._polygon = np.fromstring(option_value, dtype = np.int32, sep = ',').reshape(4,2)
+
+
+		def save_config(self, config) -> None:
+			super().save_config(config)
+			config.set(self._section_name, '_polygon', np.array2string(self._polygon.reshape(self._polygon.size,), separator = ',')[1:-1])
 
 
 	config = MyOption()
 	print(config.left, config.top, config.width, config.height)
+	print(f'not load = {config._polygon}')
 	config.load()
+	print(f'loaded = {config._polygon}')
 	print(config.left, config.top, config.width, config.height)
 	config.left = str(int(config.left) + 10)
+	config._polygon[0][0] = 10 + config._polygon[0][0]
+	print(f'modified = {config._polygon}')
 	config.save()
 
