@@ -25,7 +25,8 @@ for index in range(total_frame_count):
 	frame_index_bytes = video_index_file.read(4)
 	if (frame_index_bytes == None):
 		break
-	(frame_index, ) = struct.unpack('=i', frame_index_bytes)
+	#(frame_index, ) = struct.unpack('=i', frame_index_bytes)
+	frame_index = int.from_bytes(frame_index_bytes, byteorder='little', signed=False)
 	frame_index_list.append(frame_index)
 	frame_count += 1
 """, setup = setup, number = 3000)

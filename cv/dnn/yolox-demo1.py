@@ -6,7 +6,7 @@ import cv2
 import time
 import numpy as np
 
-CONFIDENCE_THRESHOLD = 0.7
+CONFIDENCE_THRESHOLD = 0.5
 NMS_THRESHOLD = 0.4
 # NETWORK_SIZE = 416
 NETWORK_SIZE = 288
@@ -40,10 +40,11 @@ with open("classes.txt", "r") as f:
 net = cv2.dnn.readNet("yolox_tiny.onnx")
 
 # 백엔드 설정 : CUDA (CPU) / NCS2
-net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
-net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA_FP16)
+# net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+# net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA_FP16)
 # net.setPreferableBackend(cv2.dnn.DNN_BACKEND_INFERENCE_ENGINE)
 # net.setPreferableTarget(cv2.dnn.DNN_TARGET_MYRIAD)
+net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
 
 
 cv2.namedWindow(WOINDOW_NAME, cv2.WINDOW_NORMAL)
@@ -60,7 +61,7 @@ while cv2.waitKey(1) < 1:
 
 	start = time.time()
 	# Prepare input blob and perform an inference
-	blob = cv2.dnn.blobFromImage(cv2.resize(frame, (NETWORK_SIZE, NETWORK_SIZE)), size=(NETWORK_SIZE, NETWORK_SIZE), swapRB=True)
+	blob = cv2.dnn.blobFromImage(frame, 1 / 255, size=(NETWORK_SIZE, NETWORK_SIZE), swapRB=True)
 	net.setInput(blob)
 
 	# classes, scores, boxes = model.detect(frame, CONFIDENCE_THRESHOLD, NMS_THRESHOLD)

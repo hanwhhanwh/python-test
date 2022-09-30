@@ -1,0 +1,10 @@
+# pip install Flask Flask-RESTful flask_opencv_streamer jsonschema \
+#	numpy Pillow requests \
+#	SQLAlchemy 
+Flask
+Flask-RESTful
+flask_opencv_streamer
+jsonschema
+numpy
+Pillow
+requests

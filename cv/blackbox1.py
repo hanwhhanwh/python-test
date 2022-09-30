@@ -18,7 +18,9 @@ capture.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
 capture.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGTH)
 
 # Define the codec and create VideoWriter object. The output is stored in 'output.mp4' file.
-out = cv2.VideoWriter('output.mp4', cv2.VideoWriter_fourcc(*'XVID'), 30, (FRAME_WIDTH, FRAME_HEIGTH))
+# out = cv2.VideoWriter('output.mp4', cv2.VideoWriter_fourcc(*'XVID'), 30, (FRAME_WIDTH, FRAME_HEIGTH))
+gstream_pipeline_string = f'appsrc ! videoconvert ! v4l2h264enc ! video/x-h264,level=(string)4 ! h264parse ! mp4mux ! filesink location=out.mp4'
+out = cv2.VideoWriter(gstream_pipeline_string, cv2.CAP_GSTREAMER, 0, 30, (FRAME_WIDTH, FRAME_HEIGTH))
 
 prev_time = 0
 total_frames = 0

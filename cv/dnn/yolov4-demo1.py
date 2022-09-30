@@ -36,12 +36,13 @@ with open("classes.txt", "r") as f:
 # 네트워크 설정 : YoloV4 / YoloV4-tiny
 # net = cv2.dnn.readNet("yolov4.weights", "yolov4.cfg")
 net = cv2.dnn.readNet("yolov4-tiny.weights", "yolov4-tiny.cfg")
+# net = cv2.dnn.readNet("yolov7-tiny.weights", "yolov7-tiny.cfg")
 
 # 백엔드 설정 : CUDA (CPU) / NCS2
-# net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
-# net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA_FP16)
-net.setPreferableBackend(cv2.dnn.DNN_BACKEND_INFERENCE_ENGINE)
-net.setPreferableTarget(cv2.dnn.DNN_TARGET_MYRIAD)
+net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA_FP16)
+# net.setPreferableBackend(cv2.dnn.DNN_BACKEND_INFERENCE_ENGINE)
+# net.setPreferableTarget(cv2.dnn.DNN_TARGET_MYRIAD)
 
 model = cv2.dnn_DetectionModel(net)
 model.setInputParams(size=(NETWORK_SIZE, NETWORK_SIZE), scale=1/255, swapRB=True)

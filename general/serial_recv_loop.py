@@ -8,11 +8,7 @@
 import serial
 import os, sys
 import struct
-import threading
 import time
-from typing import Final
-
-sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 
 PKT_PREFIX					= 0x4D03
