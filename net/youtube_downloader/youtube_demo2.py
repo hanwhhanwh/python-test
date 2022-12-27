@@ -1,5 +1,7 @@
 # 유튜브 정보 추출 예제
 from argparse import ArgumentParser
+from datetime import datetime
+from mysql.connector.errors import IntegrityError
 from pytube import YouTube
 from pytube.helpers import safe_filename
 from sqlalchemy import create_engine
@@ -31,7 +33,7 @@ def insert_youtube_info(yt):
 	DDB_PASSWORD			: Final = "%40!youtube~user"
 	DDB_DATABASE			: Final = "YOUTUBE_DL"
 
-	DB_URL					: Final = f"mysql+mysqlconnector://{DDB_USER_ID}:{DDB_PASSWORD}@{DDB_HOST}:{DDB_PORT}/{DDB_DATABASE}?charset=utf8mb3&collation=utf8mb3_general_ci"
+	DB_URL					: Final = f"mysql+mysqlconnector://{DDB_USER_ID}:{DDB_PASSWORD}@{DDB_HOST}:{DDB_PORT}/{DDB_DATABASE}?charset=utf8&collation=utf8mb4_general_ci"
 
 	# Database 연결을 위한 engine을 생성하여 반환합니다.
 	engine = create_engine(DB_URL, encoding = 'utf-8')
@@ -39,14 +41,14 @@ def insert_youtube_info(yt):
 	try:
 		connection = engine.raw_connection()
 	except Exception as e: # 데이터베이스 연결 실패
-		return { 'code':500, 'message': f'database connection fail! >> {e}' }
+		return { 'resultCode':500, 'ResultMsg': f'database connection fail! >> {e}' }
 
 	try:
 		cursor = connection.cursor()  # get Database cursor
 	except Exception as e: # Database cursor fail
-		return { 'code':500, 'message': f'database cursor fail! >> {e}' }
+		return { 'resultCode':500, 'ResultMsg': f'database cursor fail! >> {e}' }
 
-	clip_id = "fW34INc6BCY"
+	clip_id = yt.video_id
 	query = f"""
 INSERT INTO CLIP
 (
@@ -59,11 +61,15 @@ VALUES
 	, %s, %s, %s, %s
 );
 """
-	cursor.execute(query, (clip_id, yt.channel_id, yt.author, yt.title
-			, yt.length, yt.publish_date.strftime('%Y-%m-%d'), yt.thumbnail_url, yt.description))
-	connection.commit()
-	connection.close()
-
+	try:
+		cursor.execute(query, (clip_id, yt.channel_id, yt.author, safe_filename(yt.title)
+				, yt.length, yt.publish_date.strftime('%Y-%m-%d'), yt.thumbnail_url, yt.description))
+		connection.commit()
+		connection.close()
+	except IntegrityError as ie:
+		return { 'resultCode':400, 'ResultMsg': f'already downloaded: {clip_id}' }
+	except Exception as e:
+		return { 'resultCode':500, 'ResultMsg': f'insert internal error: {e}' }
 	return None
 
 
@@ -90,18 +96,19 @@ def main(args):
 				break
 
 	if (stream == None):
-		print("Not found downlaod strema (1080p, 720p)")
+		print("Not found downlaod stream (1080p, 720p)")
 		return
 
-	date_str = '1226'
+	date_str = datetime.now().strftime('%m%d')
 	result = insert_youtube_info(yt)
 	if (result != None):
 		print(result)
 		return
 
 	stream.download(output_path = target_path
-		, filename = f'{safe_filename(stream.title)}-{res_str}.{stream.subtype}'
-		, filename_prefix = f'y{date_str} {yt.author} - ')
+		, filename = f"{safe_filename(stream.title)}-{res_str}.{stream.subtype}"
+		, filename_prefix = f"y{date_str} {yt.author} {yt.publish_date.strftime('%y%m%d')} - " )
+	print(f'"{yt.video_id}" download complete.')
 
 
 
