@@ -7,3 +7,4 @@ net/socket/test-driver/config/test_driver_config.py
 cv/dnn/yolov4-tiny.weights
 cv/dnn/yolov4.weights
 output.mp4
+http/hello/static/
