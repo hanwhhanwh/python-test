@@ -105,17 +105,20 @@ def download_thread_main(download_path):
 
 		date_str = datetime.now().strftime('%m%d')
 		target_path = f'{download_path}/y{date_str}'
-		if (not path.exists(target_path)):
-			makedirs(target_path)
-		stream.download(output_path = target_path
-			, filename = f"{safe_filename(stream.title)}-{res_str}.{stream.subtype}"
-			, filename_prefix = f"{yt.author} {yt.publish_date.strftime('%y%m%d')} - " )
+		try:
+			if (not path.exists(target_path)):
+				makedirs(target_path)
+			stream.download(output_path = target_path
+				, filename = f"{safe_filename(stream.title)}-{res_str}.{stream.subtype}"
+				, filename_prefix = f"{yt.author} {yt.publish_date.strftime('%y%m%d')} - " )
 
-		result = insert_youtube_info(yt)
-		if (result != None):
-			print(result)
-			continue
-		print(f'"{yt.video_id}" download complete.')
+			result = insert_youtube_info(yt)
+			if (result != None):
+				print(result)
+				continue
+			print(f'"{yt.video_id}" download complete.')
+		except Exception as e:
+			print(f'Download error: {e}')
 
 
 @app.route("/youtube_dl")
