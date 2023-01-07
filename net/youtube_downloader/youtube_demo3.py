@@ -2,27 +2,29 @@
 # make hbesthee@naver.com
 # date 2023-01-06
 
-from argparse import ArgumentParser
 from datetime import datetime
-from flask import Flask, make_response, render_template, Response, redirect, request, send_file, session
+from flask import Flask, make_response, request
 from flask_cors import CORS
-from json import dumps
-from mysql.connector.errors import IntegrityError
+from json import dumps, loads
+from multiprocessing import Queue
+from os import makedirs, path
 from pytube import YouTube
 from pytube.helpers import safe_filename
-from sqlalchemy import create_engine
+from requests import get, post
+from threading import Thread
 from typing import Final
 
 
-def make_parser():
-	""" YouTube Downlaoder set-up run-time argument.
-	"""
-	# 실행 옵션 설정
-	parser = ArgumentParser(prog = 'python youtube_demo1.py', description = "YouTube Downlaoder")
-	parser.add_argument("youtube_url", type = str, help = "다운로드 받길 원하는 YouTube 영상 주소(URL)를 입력해주세요.")
-	parser.add_argument("-d", "--download_path", type = str, help = "영상을 다운로드 받길 원하는 경로를 입력해주세요.")
-	# parser.add_argument("-h", "--help", action = 'store_false', help = "도움말을 출력합니다.")
-	return parser.parse_args()
+YOUTUBE_URL_PREFIX = 'https://www.youtube.com/watch?v='
+YOUTUBE_DL_INFO_API = f'http://localhost:35000/youtube_dl'
+
+
+# 멀티 프로세스 video_id 저장을 위한 큐 생성
+_video_id_q = Queue()
+
+
+app = Flask(__name__)
+CORS(app)
 
 
 def download_youtube(target_dir, yt):
@@ -31,104 +33,112 @@ def download_youtube(target_dir, yt):
 	pass
 
 
+def get_youtube_info(video_id):
+	""" 유튜브 동영상 클립 정보를 API 호출을 통하여 가져옵니다. """
+	youtube_clip_info_url = f'{YOUTUBE_DL_INFO_API}?video_id={video_id}'
+	json_header = {'Content-Type': 'application/json'}
+	res = get(youtube_clip_info_url, headers = json_header)
+	youtube_clip_info = None
+	try:
+		youtube_clip_info = loads(res.text)
+	except:
+		youtube_clip_info = { 'resultCode': 501, 'resultMsg': f'API result error: not found json => {res.text}'}
+	return youtube_clip_info
+
+
 def insert_youtube_info(yt):
-	""" 유튜브 동영상 클립 정보를 DB에 저장합니다. """
-	DDB_HOST				: Final = "192.168.0.12"
-	DDB_PORT				: Final = "23306"
-	DDB_USER_ID				: Final = "youtubeuser"
-	DDB_PASSWORD			: Final = "%40!youtube~user"
-	DDB_DATABASE			: Final = "YOUTUBE_DL"
-
-	DB_URL					: Final = f"mysql+mysqlconnector://{DDB_USER_ID}:{DDB_PASSWORD}@{DDB_HOST}:{DDB_PORT}/{DDB_DATABASE}?charset=utf8&collation=utf8mb4_general_ci"
-
-	# Database 연결을 위한 engine을 생성하여 반환합니다.
-	engine = create_engine(DB_URL, encoding = 'utf-8')
-
+	""" 유튜브 동영상 클립 정보를 API 호출을 통하여 DB에 저장합니다. """
+	youtube_clip_info_url = YOUTUBE_DL_INFO_API
+	json_header = {'Content-Type': 'application/json'}
+	json_data = {
+			'clip_id': yt.video_id
+			, 'channel_id': yt.channel_id
+			, 'author': yt.author
+			, 'title': yt.title
+			, 'length': yt.length
+			, 'publish_date': yt.publish_date.strftime('%Y-%m-%dT%H:%M')
+			, 'thumbnail_url': yt.thumbnail_url
+			, 'description': yt.description
+		}
+	data = dumps(json_data, ensure_ascii = True) # REST API 호출 시, ensure_ascii = True 설정을 해주어야 수신측에서 올바르게 수신 가능함
+	res = post(youtube_clip_info_url, headers = json_header, data = data)
+	result = None
 	try:
-		connection = engine.raw_connection()
-	except Exception as e: # 데이터베이스 연결 실패
-		return { 'resultCode':500, 'ResultMsg': f'database connection fail! >> {e}' }
-
-	try:
-		cursor = connection.cursor()  # get Database cursor
-	except Exception as e: # Database cursor fail
-		return { 'resultCode':500, 'ResultMsg': f'database cursor fail! >> {e}' }
-
-	clip_id = yt.video_id
-	query = f"""
-INSERT INTO CLIP
-(
-	member_no, clip_id, channel_id, author, title
-	, length, publish_date, thumbnail_url, description
-)
-VALUES
-(
-	1, %s, %s, %s, %s
-	, %s, %s, %s, %s
-);
-"""
-	try:
-		cursor.execute(query, (clip_id, yt.channel_id, yt.author, safe_filename(yt.title)
-				, yt.length, yt.publish_date.strftime('%Y-%m-%d'), yt.thumbnail_url, yt.description))
-		connection.commit()
-		connection.close()
-	except IntegrityError as ie:
-		return { 'resultCode':400, 'ResultMsg': f'already downloaded: {clip_id}' }
-	except Exception as e:
-		return { 'resultCode':500, 'ResultMsg': f'insert internal error: {e}' }
-	return None
+		result = loads(res.text)
+	except:
+		result = { 'resultCode': 502, 'resultMsg': f'API POST error: not found json => {res.text}'}
+	return result
 
 
-def main(args):
-	""" Main routine 
+def download_thread_main(download_path):
+	""" download thread main routine
 	"""
-	yt = YouTube(args.youtube_url)
+	print(f'"YOUTUBE_DL download thread" started.')
+
+	video_id = None
 	stream = None
 	res_str = '1080p'
-	target_path = args.download_path
-	if (target_path == None):
-		target_path = '.'
+	if (download_path == None):
+		download_path = '.'
+	target_path = download_path
 
-	for st in yt.streams.filter(file_extension = 'mp4', res = res_str):
-		if (st.includes_audio_track == True):
-			stream = st
-			break
+	while (True):
+		video_id =_video_id_q.get()
+		clip_url = f'{YOUTUBE_URL_PREFIX}{video_id}'
+		yt = YouTube(clip_url)
 
-	if (stream == None):
-		res_str = '720p'
 		for st in yt.streams.filter(file_extension = 'mp4', res = res_str):
 			if (st.includes_audio_track == True):
 				stream = st
 				break
 
-	if (stream == None):
-		print("Not found downlaod stream (1080p, 720p)")
-		return
+		if (stream == None):
+			res_str = '720p'
+			for st in yt.streams.filter(file_extension = 'mp4', res = res_str):
+				if (st.includes_audio_track == True):
+					stream = st
+					break
 
-	date_str = datetime.now().strftime('%m%d')
-	result = insert_youtube_info(yt)
-	if (result != None):
-		print(result)
-		return
+		if (stream == None):
+			print(f"{video_id}: Not found downlaod stream (1080p, 720p)")
+			continue
 
-	stream.download(output_path = target_path
-		, filename = f"{safe_filename(stream.title)}-{res_str}.{stream.subtype}"
-		, filename_prefix = f"y{date_str} {yt.author} {yt.publish_date.strftime('%y%m%d')} - " )
-	print(f'"{yt.video_id}" download complete.')
+		date_str = datetime.now().strftime('%m%d')
+		target_path = f'{download_path}/y{date_str}'
+		if (not path.exists(target_path)):
+			makedirs(target_path)
+		stream.download(output_path = target_path
+			, filename = f"{safe_filename(stream.title)}-{res_str}.{stream.subtype}"
+			, filename_prefix = f"{yt.author} {yt.publish_date.strftime('%y%m%d')} - " )
 
-
-app = Flask(__name__)
-CORS(app)
+		result = insert_youtube_info(yt)
+		if (result != None):
+			print(result)
+			continue
+		print(f'"{yt.video_id}" download complete.')
 
 
 @app.route("/youtube_dl")
 def youtube_dl():
+	result = None
 	video_id = request.args.get('video_id')
+	force_download = request.args.get('video_id') == 'y'
 	if (not video_id):
 		result = { "resultCode":400, "resultMsg":"Bad parameter : youtube infomation (body)" }
 
 	# RESTful API로 다운로드 받은 이력이 있는지 확인하기
+	youtube_clip_info = get_youtube_info(video_id)
+	print(youtube_clip_info)
+	try:
+		if ((not force_download) and (youtube_clip_info.get('resultCode') == 200) ):
+			result = { "resultCode":201, "resultMsg": f"Already downloaded : {video_id}" }
 
+		if (result == None):
+			_video_id_q.put(video_id)
+			result = { "resultCode":200, "resultMsg": f"Success: {video_id} added." }
+	except Exception as e:
+		errMsg = f'API call error: {e}'
+		result = {"resultCode":500, "resultMsg": errMsg }
 
 	response = make_response(dumps(result, ensure_ascii = False))
 	response.headers['Content-type'] = 'application/json; charset=utf-8'
@@ -139,9 +149,10 @@ def youtube_dl():
 
 if __name__ == '__main__':
 
+	# run Youtube download thread
+	target_path = 'C:/Temp/Youtube'
+	thread = Thread(target = download_thread_main, args = (target_path, ))
+	thread.start()
 
-	# args = make_parser()
-	# main(args)
-
-
+	# run Flask web server
 	app.run(host='0.0.0.0', port=80, debug=True)
