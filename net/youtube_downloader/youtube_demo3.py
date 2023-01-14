@@ -110,7 +110,7 @@ def download_thread_main(download_path):
 				makedirs(target_path)
 			stream.download(output_path = target_path
 				, filename = f"{safe_filename(stream.title)}-{res_str}.{stream.subtype}"
-				, filename_prefix = f"{yt.author} {yt.publish_date.strftime('%y%m%d')} - " )
+				, filename_prefix = f"y{date_str} {yt.author} {yt.publish_date.strftime('%y%m%d')} - " )
 
 			result = insert_youtube_info(yt)
 			if (result != None):
@@ -119,6 +119,7 @@ def download_thread_main(download_path):
 			print(f'"{yt.video_id}" download complete.')
 		except Exception as e:
 			print(f'Download error: {e}')
+			_video_id_q.put(video_id) # 재시도 할 수 있도록 다시 넣기
 
 
 @app.route("/youtube_dl")
