@@ -82,44 +82,50 @@ def download_thread_main(download_path):
 		download_path = '.'
 	target_path = download_path
 
+	_download_error_yt_list = dict()
 	while (True):
 		video_id =_video_id_q.get()
 		clip_url = f'{YOUTUBE_URL_PREFIX}{video_id}'
 		yt = YouTube(clip_url)
 
-		for st in yt.streams.filter(file_extension = 'mp4', res = res_str):
-			if (st.includes_audio_track == True):
-				stream = st
-				break
-
-		if (stream == None):
-			res_str = '720p'
+		try:
 			for st in yt.streams.filter(file_extension = 'mp4', res = res_str):
 				if (st.includes_audio_track == True):
 					stream = st
 					break
 
-		if (stream == None):
-			print(f"{video_id}: Not found downlaod stream (1080p, 720p)")
-			continue
+			if (stream == None):
+				res_str = '720p'
+				for st in yt.streams.filter(file_extension = 'mp4', res = res_str):
+					if (st.includes_audio_track == True):
+						stream = st
+						break
 
-		date_str = datetime.now().strftime('%m%d')
-		target_path = f'{download_path}/y{date_str}'
-		try:
+			if (stream == None):
+				print(f"{video_id}: Not found downlaod stream (1080p, 720p)")
+				continue
+
+			date_str = datetime.now().strftime('%m%d')
+			target_path = f'{download_path}/y{date_str}'
+
 			if (not path.exists(target_path)):
 				makedirs(target_path)
 			stream.download(output_path = target_path
-				, filename = f"{safe_filename(stream.title)}-{res_str}.{stream.subtype}"
+				, filename = f"{safe_filename(stream.title.replace('/', '-'))}-{res_str}.{stream.subtype}"
 				, filename_prefix = f"y{date_str} {yt.author} {yt.publish_date.strftime('%y%m%d')} - " )
 
 			result = insert_youtube_info(yt)
 			if (result != None):
 				print(result)
 				continue
-			print(f'"{yt.video_id}" download complete.')
+			print(f'"{stream.title}" download complete.')
 		except Exception as e:
-			print(f'Download error: {e}')
-			_video_id_q.put(video_id) # 재시도 할 수 있도록 다시 넣기
+			print(f'Download error ({video_id}): {e}')
+			error_count = _download_error_yt_list.get(video_id)
+			error_count = error_count + 1 if error_count else 1
+			_download_error_yt_list[video_id] = error_count
+			if (error_count < 5): # 5회까지만 재시도 처리
+				_video_id_q.put(video_id) # 재시도 할 수 있도록 다시 넣기
 
 
 @app.route("/youtube_dl")
