@@ -3,33 +3,10 @@
 # author	hbesthee@naver.com
 
 from argparse import ArgumentParser
-import os
-import urllib
-import traceback
-import time
-import sys
-import numpy as np
-import cv2
 from rknn.api import RKNN
 
-ONNX_MODEL = 'yolov5s.onnx'
-RKNN_MODEL = 'yolov5s.rknn'
-IMG_PATH = './bus.jpg'
 DATASET = './dataset.txt'
-
 QUANTIZE_ON = True
-
-OBJ_THRESH = 0.25
-NMS_THRESH = 0.45
-IMG_SIZE = 640
-
-CLASSES = ("person", "bicycle", "car", "motorbike ", "aeroplane ", "bus ", "train", "truck ", "boat", "traffic light",
-		"fire hydrant", "stop sign ", "parking meter", "bench", "bird", "cat", "dog ", "horse ", "sheep", "cow", "elephant",
-		"bear", "zebra ", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite",
-		"baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork", "knife ",
-		"spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza ", "donut", "cake", "chair", "sofa",
-		"pottedplant", "bed", "diningtable", "toilet ", "tvmonitor", "laptop	", "mouse	", "remote ", "keyboard ", "cell phone", "microwave ",
-		"oven ", "toaster", "sink", "refrigerator ", "book", "clock", "vase", "scissors ", "teddy bear ", "hair drier", "toothbrush ")
 
 
 def make_parser():
@@ -113,16 +90,13 @@ def onnx2rknn_converter(args):
 	# Export RKNN model
 	if (args.verbose > 0):
 		print('Export rknn model')
-	ret = rknn.export_rknn(RKNN_MODEL)
+	ret = rknn.export_rknn(args.rknn_path)
 	if ret != 0:
 		print('Export rknn model failed!')
 		exit(ret)
 	if (args.verbose > 0):
 		print('--> Export done')
 
-	if (args.verbose > 0):
-		sdk_version = rknn.get_sdk_version()
-		print(sdk_version)
 	rknn.release()
 
 
