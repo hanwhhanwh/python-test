@@ -110,9 +110,9 @@ def download_thread_main(download_path):
 
 			if (not path.exists(target_path)):
 				makedirs(target_path)
-			stream.download(output_path = target_path
-				, filename = f"{safe_filename(stream.title.replace('/', '-'))}-{res_str}.{stream.subtype}"
-				, filename_prefix = f"y{date_str} {yt.author} {yt.publish_date.strftime('%y%m%d')} - " )
+			filename = f"{safe_filename(stream.title.replace('/', '-'))}-{res_str}.{stream.subtype}"
+			filename_prefix = f"y{date_str} {safe_filename(yt.author.replace('/', '-'))} {yt.publish_date.strftime('%y%m%d')} - "
+			stream.download(output_path = target_path, filename = filename, filename_prefix = filename_prefix )
 
 			result = insert_youtube_info(yt)
 			if (result != None):
