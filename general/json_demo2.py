@@ -6,8 +6,12 @@
 def load_json_conf(json_file_path):
 	"""
 		JSON 파일을 열어 dict 형태로 로딩합니다.
-		@param json_file_path JSON 파일에 대한 경로 문자열 (파일명 포함)
-		@return (json_data, error_message) 이상이 없다면, JSON 객체를 반환하고 오류가 발생한 경우에는 error_message 항목에 오류 문자열을 반환합니다.
+
+	Args:
+		json_file_path (string): JSON 파일에 대한 경로 문자열 (파일명 포함)
+
+	Returns:
+		(dict, error_message): 이상이 없다면, JSON 객체를 반환하고 오류가 발생한 경우에는 error_message 항목에 오류 문자열을 반환합니다.
 	"""
 	from json import loads
 	from os import path
