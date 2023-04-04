@@ -73,6 +73,8 @@ class FileLogger:
 		"""
 		# intialize logger
 		log = logging.getLogger(self.log_filename)
+		if (len(log.handlers) > 0):
+			return log
 		log.setLevel(self.log_level) 
 
 		# Make file handler
