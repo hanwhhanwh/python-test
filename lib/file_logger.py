@@ -140,6 +140,8 @@ def createLogger(log_path = './logs'
 
 	# intialize logger
 	log = logging.getLogger(log_filename)
+	if (len(log.handlers) > 0):
+		return log
 	log.setLevel(log_level) 
 
 	# Make file handler
