@@ -86,7 +86,7 @@ def download_thread_main(download_path):
 	while (True):
 		video_id =_video_id_q.get()
 		clip_url = f'{YOUTUBE_URL_PREFIX}{video_id}'
-		yt = YouTube(clip_url)
+		yt = YouTube(clip_url, use_oauth = True, allow_oauth_cache = True)
 
 		try:
 			for st in yt.streams.filter(file_extension = 'mp4', res = res_str):
