@@ -14,6 +14,10 @@ from requests import get, post
 from threading import Thread
 from typing import Final
 
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 YOUTUBE_URL_PREFIX = 'https://www.youtube.com/watch?v='
 YOUTUBE_DL_INFO_API = f'http://localhost:35000/youtube_dl'
@@ -87,6 +91,7 @@ def download_thread_main(download_path):
 		video_id =_video_id_q.get()
 		clip_url = f'{YOUTUBE_URL_PREFIX}{video_id}'
 		yt = YouTube(clip_url, use_oauth = True, allow_oauth_cache = True)
+		#yt = YouTube(clip_url, use_oauth = False, allow_oauth_cache = False)
 
 		try:
 			for st in yt.streams.filter(file_extension = 'mp4', res = res_str):
@@ -158,6 +163,14 @@ def youtube_dl():
 
 
 if __name__ == '__main__':
+
+	logging.disable(5)
+	logger1 = logging.getLogger('pytube.request')
+	logger1.level = 10
+	logger2 = logging.getLogger('pytube.extract')
+	logger2.level = 10
+	logger3 = logging.getLogger('pytube.streams')
+	logger3.level = 10
 
 	# run Youtube download thread
 	target_path = 'C:/Temp/Youtube'
