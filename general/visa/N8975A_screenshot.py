@@ -15,6 +15,8 @@ client = rm.open_resource(f'GPIB{_port}::{_GPIB}::INSTR') # 지정한 HOST와 PO
 print (client.query('*IDN?'))
 
 client.write(f'MMEM:STOR:SCR:REV "C:\GUI.GIF"') # 화면 갈무리
+sleep(25) # 계측기에서 갈무리가 완료될 때까지 대기하기
+
 client.write(f'MMEMory:DATA? "C:\GUI.GIF"') # 갈무리한 파일을 PC로 전달
 img = client.read_raw() # 갈무리 파일을 binary 형식으로 읽어오기
 
