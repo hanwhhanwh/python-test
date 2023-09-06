@@ -15,10 +15,11 @@ print (power_meter.query('*IDN?'))
 
 power_meter.write(f':SENS:FREQ 50MHz')
 power_meter.write(f':SENS:SPE 20')
-point = power_meter.query(f':FETC?')
-print(f'{type(point)}')
-print(f'{point=}')
-fpoint = float(point)
-print(f'{fpoint=}')
+power_str = power_meter.query(f':FETC?')
+
+print(f'{type(power_str)}')
+print(f'{power_str=}')
+power = float(power_str)
+print(f'{power=}')
 
 power_meter.close()
