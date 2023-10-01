@@ -3,7 +3,7 @@
 # date 2023-10-01
 
 from datetime import datetime
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, PageElement, Tag
 from logging import getLogger, Logger
 from os import path, makedirs, remove
 from urllib.parse import urlparse
@@ -69,7 +69,7 @@ CONF_DEF_AVGOSU: Final					= {
 }
 
 
-def getDetailInfo(info: dict):
+def getDetailInfo(info: dict) -> bool:
 	""" AVGOSU에서 수집한 기본 정보를 바탕으로 보다 상세한 정보를 추출합니다.
 
 	Args:
@@ -96,17 +96,58 @@ def getDetailInfo(info: dict):
 			_logger.warning(f'"view-img" div tag not found : {url=}')
 			return False
 		
-		img_tag = next(view_img.children)
+		img_tag = view_img.next_element
+		# img_tag = next(view_img)
 		info[CN_COVER_IMAGE_URL] = img_tag.get('src')
-		# img_tag = next(view_img.children)
 		img_tag = img_tag.next_element
 		info[CN_THUMBNAIL_URL] = img_tag.get('src')
 
+		magnet_tag = soup.find('a', 'btn btn-magnet')
+		info[CN_MAGNET_ADDR] = getMagnetAddr(magnet_tag)
 	else:
 		_logger.warning(f'URL get error {url=} : {response.status_code=}')
 		return False
 
 	return True
+
+
+def getMagnetAddr(magnet_tag: Tag) -> str:
+	""" 주어진 주소로부터 마그넷 다운로드 정보를 받아와 반환합니다.
+
+	Args:
+		url (str): 마그넷 다운로드 정보를 받을 URL
+
+	Returns:
+		str: 마그넷 다운로드 정보. 찾지 못한 경우에는 None을 반환합니다.
+	"""
+	if (magnet_tag == None):
+		_logger.warning(f'not found btn-magnet')
+		return None
+
+	magnet_url = None
+	onclick: str = magnet_tag.get('onclick')
+	print(onclick)
+	pos1 = onclick.find("'")
+	if (pos1 >= 0):
+		pos1 += 1
+		pos2 = onclick.find("'", pos1)
+		if (pos2 >= 0):
+			magnet_url = f'https://{URL_HOST_AVGOSU}{onclick[pos1:pos2]}'
+
+	url = magnet_url
+	if ( (url == None) or (url.strip() == '') ):
+		return None
+	response = requests.get(url, headers = DEFAULT_HEADERS)
+	if (response.status_code == 200):
+		html = response.text
+		pos1 = html.find('magnet:?')
+		if (pos1 >= 0):
+			pos2 = html.find('"', pos1)
+			if (pos2 >= 0):
+				magnet_addr = html[pos1:pos2]
+				return (magnet_addr)
+
+	return None
 
 
 def parseAvInfo(info_list: list, html: str) -> bool:
