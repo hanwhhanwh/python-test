@@ -59,13 +59,26 @@ CN_THUMBNAIL_URL: Final					= 'thumbnail_url'
 CN_MAGNET_ADDR: Final					= 'magnet_addr'
 
 
+JSON_DB: Final							= 'database'
+
+JKEY_DB_HOST: Final						= 'db_host'
+JKEY_DB_PORT: Final						= 'db_port'
+JKEY_USERNAME: Final					= 'username'
+JKEY_PASSWORD: Final					= 'password'
 JKEY_LIMIT_PAGE_COUNT: Final			= 'limit_page_count'
 
 DEF_LIMIT_PAGE_COUNT: Final				= 10
 
 
-CONF_DEF_AVGOSU: Final					= {
-	JKEY_LIMIT_PAGE_COUNT: DEF_LIMIT_PAGE_COUNT
+DEF_AVGOSU_CONF_FILE: Final				= '../../conf/avgosu.json'
+DEF_CONF_AVGOSU: Final					= {
+	JSON_DB: {
+		JKEY_DB_HOST: 'localhost'
+		, JKEY_DB_PORT: '3306'
+		, JKEY_USERNAME: 'username'
+		, JKEY_PASSWORD: 'password'
+	}
+	, JKEY_LIMIT_PAGE_COUNT: DEF_LIMIT_PAGE_COUNT
 }
 
 
@@ -136,6 +149,7 @@ def getMagnetAddr(magnet_tag: Tag) -> str:
 
 	url = magnet_url
 	if ( (url == None) or (url.strip() == '') ):
+		_logger.warning(f'not found magnet_url')
 		return None
 	response = requests.get(url, headers = DEFAULT_HEADERS)
 	if (response.status_code == 200):
@@ -147,6 +161,7 @@ def getMagnetAddr(magnet_tag: Tag) -> str:
 				magnet_addr = html[pos1:pos2]
 				return (magnet_addr)
 
+	_logger.warning(f'not found magnet_addr : {html}')
 	return None
 
 
@@ -162,12 +177,14 @@ def parseAvInfo(info_list: list, html: str) -> bool:
 	"""
 	soup = BeautifulSoup(html, 'html.parser')
 	if (soup == None):
+		_logger.error(f'html.parser error')
 		return False
 	result = True
 
 	# 주요 목록 정보
 	av_list = soup.select_one(DOM_PATH_AV_LIST)
 	if (av_list == None):
+		_logger.error(f'not found info list element.')
 		return False
 
 	for av_list_item in av_list.children:
@@ -206,6 +223,13 @@ if __name__ == '__main__':
 	make_init_folders(('../../logs', '../../db', '../../conf'))
 	_logger = createLogger(log_path = '../../logs', log_filename = LOGGER_NAME, log_level = LOGGER_LEVEL_DEBUG)
 
+	_conf, error_msg = load_json_conf(DEF_AVGOSU_CONF_FILE)
+	if (_conf == None):
+		_logger.warning(error_msg)
+		_conf = DEF_CONF_AVGOSU
+		save_json_conf(DEF_AVGOSU_CONF_FILE, _conf)
+	# print(_conf)
+
 	# get magnet button info 
 	url = 'https://avgosu1.com/torrent/etc/1184599.html'
 	magnet_url = None
@@ -216,14 +240,14 @@ if __name__ == '__main__':
 		if (soup != None):
 			magnet_tag = soup.find('a', 'btn btn-magnet')
 			onclick: str = magnet_tag.get('onclick')
-			print(onclick)
+			# print(onclick)
 			pos1 = onclick.find("'")
 			if (pos1 >= 0):
 				pos1 += 1
 				pos2 = onclick.find("'", pos1)
 				if (pos2 >= 0):
 					magnet_url = f'https://{URL_HOST_AVGOSU}{onclick[pos1:pos2]}'
-					print(f'{magnet_url=}')
+					# print(f'{magnet_url=}')
 
 
 	# parsing magnet address
@@ -233,17 +257,17 @@ if __name__ == '__main__':
 		response = requests.get(url, headers = DEFAULT_HEADERS)
 		if (response.status_code == 200):
 			html = response.text
-			print(html)
+			# print(html)
 			pos1 = html.find('magnet:?')
 			if (pos1 >= 0):
 				pos2 = html.find('"', pos1)
 				if (pos2 >= 0):
 					magnet_addr = html[pos1:pos2]
-					print(magnet_addr)
+					# print(magnet_addr)
 
 
 	info_list = list()
-	_limit_page_count = 1 # MAX = 165
+	_limit_page_count = get_dict_value(_conf, JKEY_LIMIT_PAGE_COUNT, DEF_LIMIT_PAGE_COUNT) # MAX = 165
 	for page_no in range(_limit_page_count):
 		page_no += 1
 		_logger.info(f'try parsing {page_no=}')
