@@ -325,9 +325,9 @@ if __name__ == '__main__':
 	# 	sys.exit(error_code)
 
 	info_list = list()
-	_limit_page_count = get_dict_value(_conf, JKEY_LIMIT_PAGE_COUNT, DEF_LIMIT_PAGE_COUNT) # MAX = 165
+	_limit_page_count = get_dict_value(_conf, JKEY_LIMIT_PAGE_COUNT, DEF_LIMIT_PAGE_COUNT) # MAX = 167
 	for page_no in range(_limit_page_count):
-		page_no = 159 - page_no
+		page_no = 167 - page_no
 		_logger.info(f'try parsing {page_no=}')
 		url = f'https://{URL_HOST_AVGOSU}/torrent/etc.html?&page={page_no}'
 
