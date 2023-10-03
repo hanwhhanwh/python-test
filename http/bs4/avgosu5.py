@@ -7,6 +7,7 @@ from datetime import datetime
 from logging import getLogger, Logger
 from os import path, makedirs, remove
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from time import sleep
 from typing import Final
 from urllib.parse import urlparse
@@ -249,10 +250,10 @@ VALUES
 		if avgosu_no == 0 or avgosu_no == None:
 			_logger.error(f'insert execution fail : avgosu info')
 		connection.commit()
+	except IntegrityError as e:
+		_logger.info(f'duplicated info : {info.get(CN_FILM_ID)} / {info.get(CN_FILE_SIZE)} / {info.get(CN_DATE)}')
+		return ERR_DB_INTEGRITY
 	except Exception as e:
-		if (e.__class__.__name__ == 'IntegrityError'):
-			_logger.info(f'duplicated info : {info.get(CN_FILM_ID)} / {info.get(CN_FILE_SIZE)} / {info.get(CN_DATE)}')
-			return ERR_DB_INTEGRITY
 		_logger.error(f'insert execution fail : avgosu info2 >> {e}')
 		return ERR_DB_INTERNAL
 
