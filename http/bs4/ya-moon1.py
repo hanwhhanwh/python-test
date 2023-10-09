@@ -6,12 +6,11 @@ from bs4 import BeautifulSoup, PageElement, Tag
 from datetime import datetime
 from logging import getLogger, Logger
 from os import path, makedirs, remove
+from requests import get as get_req, post as post_req
 from time import sleep
 from typing import Final
 from urllib.parse import urlparse
 from urllib3 import request
-
-import requests
 
 
 from avdb_data_model import AvdbDataModel
@@ -26,25 +25,27 @@ from lib.json_util import get_dict_value, init_conf_files, make_init_folders, lo
 LOGGER_LEVEL_DEBUG: Final				= 10
 LOGGER_NAME: Final						= 'yamoon'
 
-URL_HOST_YAMOON: Final					= 'ya-moon.com'
+URL_HOST_YAMOON: Final					= 'www.ya-moon.com'
 
 DOM_PATH_AV_LIST: Final					= '#fboardlist > div.list-container'
 DOM_PATH_SUB_INFO: Final				= 'body > div.wrapper > div.container.content > div:nth-child(1) > div.col-md-3.col-sm-12 > div.panel.panel-default'
 
 DEFAULT_HEADERS: Final					= {
 	'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7'
+	, 'Accept-Encoding': 'gzip, deflate, br'
 	, 'Accept-Language': 'ko-KR,ko;q=0.9'
 	, 'Cache-Control': 'no-cache'
 	, 'Connection': 'keep-alive'
-	, 'Cookie': '_ga=GA1.1.485726505.1696248254; filemanagercookie=hbesthee; member%5Finfo=grade=333&membercolor=lightskyblue&username=hbesthee&regtext=%EC%9D%BC%EB%B0%98&regcolor=btn%2Du%2Dblue&getetc=0&gradepoint=&loginsave=off&readok=no; ASPSESSIONIDCWATTCBA=AACENJCBPHINEEDPCGBJNNGM; _ga_N6N5N6RS06=GS1.1.1696318895.4.1.1696321601.2.0.0'
+	, 'Cookie': '_ga=GA1.1.1671706350.1696760343; filemanagercookie=hbesthee; ckCsrfToken=noF6XP41ac8kk970a5O7UC49pNFHs4xoOYY01hpv; ASPSESSIONIDCQCUSCAB=CLOPFFCBEMOCFLFNLDEPLOLB; member%5Finfo=username=hbesthee&grade=333&membercolor=lightskyblue&regtext=%EC%9D%BC%EB%B0%98&regcolor=btn%2Du%2Dblue&getetc=0&gradepoint=&loginsave=off&readok=no; ASPSESSIONIDAUERTCAA=ABPNDBPBKNLAENLGFNCMHFDA; _ga_N6N5N6RS06=GS1.1.1696852550.10.1.1696852552.58.0.0'
+	, 'Host': 'www.ya-moon.com'
 	, 'Pragma': 'no-cache'
 	, 'Sec-Fetch-Dest': 'document'
 	, 'Sec-Fetch-Mode': 'navigate'
 	, 'Sec-Fetch-Site': 'none'
 	, 'Sec-Fetch-User': '?1'
 	, 'Upgrade-Insecure-Requests': '1'
-	, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36'
-	, 'sec-ch-ua': '"Chromium";v="116", "Not)A;Brand";v="24", "Google Chrome";v="116"'
+	, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36'
+	, 'sec-ch-ua': '"Google Chrome";v="117", "Not;A=Brand";v="8", "Chromium";v="117"'
 	, 'sec-ch-ua-mobile': '?0'
 	, 'sec-ch-ua-platform': '"Windows"'
 }
@@ -135,6 +136,33 @@ class YamoonScriptCrawler:
 		return count
 
 
+	def downloadScriptFile(self, to_file: str, info: dict) -> str:
+		""" 주어진 URL을 파일로 다운로드 받습니다.
+
+		Args:
+			to_file (str): 다운로드 받아서 저장될 파일 경로
+			info (dict): 자막 파일 정보
+
+		Returns:
+			str: URL에서 가져온 HTML 소스 문자열
+		"""
+		# headers = self._header.copy()
+		# headers['referer'] = f'https://{URL_HOST_YAMOON}/newboard/yamoonboard/board-read.asp?fullboardname=yamoonmemberboard&mtablename=subtitled&num={info.get(const.CN_YAMOON_BOARD_NO)}'
+		url = f'https://{URL_HOST_YAMOON}{info.get(const.CN_SCRIPT_FILE_URL)}'
+		try:
+			file = get_req(url, headers = self._header)
+		except Exception as e:
+			self._logger.error(f'file download fail: {to_file=} << {url=}')
+			return const.ERR_FAIL_REQUEST
+		try:
+			open(to_file, 'wb').write(file.content)
+		except Exception as e:
+			self._logger.error(f'file download fail: {to_file=} << {url=}')
+			return const.ERR_DOWNLOAD_FILE
+
+		return 0
+
+
 	def fetchHtmlSource(self, url: str) -> str:
 		""" 주어진 URL에서 HTML 소스를 받아 반환합니다.
 
@@ -146,7 +174,7 @@ class YamoonScriptCrawler:
 		"""
 		html = ''
 		for _ in range(const.DEF_RETRY_COUNT):
-			response = requests.get(url, headers = self._header)
+			response = get_req(url, headers = self._header)
 			if (response.status_code == 200):
 				html = response.text
 				break
@@ -173,7 +201,7 @@ class YamoonScriptCrawler:
 			with open('./ym/detail.html', encoding = 'UTF-8') as f:
 				html = f.read()
 		else:
-			url = f'https://www.ya-moon.com/newboard/yamoonboard/board-read.asp?fullboardname=yamoonmemberboard&mtablename=subtitled&num={board_no}'
+			url = f'https://{URL_HOST_YAMOON}/newboard/yamoonboard/board-read.asp?fullboardname=yamoonmemberboard&mtablename=subtitled&num={board_no}'
 
 			html = self.fetchHtmlSource(url)
 
@@ -195,7 +223,7 @@ class YamoonScriptCrawler:
 			with open('./ym/list.html', encoding = 'UTF-8') as f:
 				html = f.read()
 		else:
-			url = f'https://www.ya-moon.com/newboard/yamoonboard/board-list.asp?fullboardname=yamoonmemberboard&mtablename=subtitled&page={page_no}'
+			url = f'https://{URL_HOST_YAMOON}/newboard/yamoonboard/board-list.asp?fullboardname=yamoonmemberboard&mtablename=subtitled&page={page_no}'
 
 			html = self.fetchHtmlSource(url)
 
@@ -245,10 +273,13 @@ class YamoonScriptCrawler:
 			script_info[const.CN_UPLOADER]			= info.get(const.CN_UPLOADER)
 			script_info[const.CN_TITLE]				= info.get(const.CN_TITLE)
 			script_info[const.CN_BOARD_DATE]		= info.get(const.CN_BOARD_DATE)
+			script_info[const.CN_DETAIL_URL]		= info.get(const.CN_DETAIL_URL)
 
 			script_info[const.CN_SCRIPT_NAME] = a_tag.text.strip()
-			script_info[const.CN_SCRIPT_FILE_URL] = f'https://{URL_HOST_YAMOON}{a_tag.get('href')}'
+			script_info[const.CN_SCRIPT_FILE_URL] = a_tag.get("href")
 			self._logger.debug(f'  parsing {a_index=}: {script_info}')
+			to_file = f'./scripts/{script_info.get(const.CN_SCRIPT_NAME)}'
+			self.downloadScriptFile(to_file, script_info)
 			script_list.append(script_info)
 		return 0
 
@@ -288,6 +319,8 @@ class YamoonScriptCrawler:
 					info[const.CN_TITLE] = td_tag.select_one('a').text.strip()
 				elif (td_index == 7): # 게시판에 올린 날짜
 					info[const.CN_BOARD_DATE] = f'20{td_tag.text.strip()}'.replace('/', '-')
+
+			# info[const.CN_DETAIL_URL] = f'https://{URL_HOST_YAMOON}/newboard/yamoonboard/board-read.asp?fullboardname=yamoonmemberboard&mtablename=subtitled&num={info.get(const.CN_YAMOON_BOARD_NO)}'
 			# self._logger.debug(f'  parsing {td_index=}: {info}')
 			info_list.append(info)
 
@@ -331,85 +364,47 @@ class YamoonScriptCrawler:
 		return 0
 
 
+	def run(self) -> int:
+		""" yamoon 자목 게시판 자료를 수집 처리합니다. """
+		ret = self.init()
+		if (ret != 0):
+			print(f'Internal Error (init): {ret=}')
+		self.setLocalMode()
+
+		page_no = 1
+		html = self.fetchListHtmlSource(page_no)
+		print(f'list HTML {len(html)=}')
+
+		info_list = list()
+		ret = self.parseScriptList(info_list, html)
+		if (ret != 0):
+			print(f'Internal Error (parseScriptList): {ret=}')
+			return ret
+
+		info = info_list.pop()
+		html = self.fetchDetailHtmlSource(info.get(const.CN_YAMOON_BOARD_NO))
+		print(f'detail HTML {len(html)=}')
+
+		script_info_list = list()
+		ret = self.parseDetailInfo(script_info_list, info, html)
+		if (ret != 0):
+			print(f'Internal Error (parseDetailInfo): {ret=}')
+			return ret
+
+
 	def setLocalMode(self) -> None:
 		""" 디버깅 모드로 설정합니다. """
 		self._is_local = True
 
 
 
-def main() -> None:
+def main() -> int:
 	""" 실행 부 """
-
-
 	ysc = YamoonScriptCrawler()
-	ret = ysc.init()
-	if (ret != 0):
-		print(f'Internal Error (init): {ret=}')
-	ysc.setLocalMode()
+	ret = ysc.run()
 
-	page_no = 1
-	html = ysc.fetchListHtmlSource(page_no)
-	print(f'list HTML {len(html)=}')
+	return ret
 
-	info_list = list()
-	ret = ysc.parseScriptList(info_list, html)
-	if (ret != 0):
-		print(f'Internal Error (parseScriptList): {ret=}')
-		return ret
-
-	info = info_list.pop()
-	html = ysc.fetchDetailHtmlSource(info.get(const.CN_YAMOON_BOARD_NO))
-	print(f'detail HTML {len(html)=}')
-
-	script_info_list = list()
-	ret = ysc.parseDetailInfo(script_info_list, info, html)
-	if (ret != 0):
-		print(f'Internal Error (parseDetailInfo): {ret=}')
-		return ret
-
-
-	return 0
-
-
-	if (False):
-		_conf, error_msg = load_json_conf(DEF_YAMOON_CONF_FILE)
-		if (_conf == None):
-			_logger.warning(error_msg)
-			_conf = DEF_CONF_AVGOSU
-			save_json_conf(DEF_YAMOON_CONF_FILE, _conf)
-		# print(_conf)
-
-		# connection, cursor, error_code = connect_database(_conf.get(JSON_DB))
-		# if (error_code != 0):
-		# 	sys.exit(error_code)
-
-		is_ended = False
-		info_list = list()
-		# _limit_page_count = get_dict_value(_conf, JKEY_LIMIT_PAGE_COUNT, DEF_LIMIT_PAGE_COUNT)
-		_limit_page_count = 1
-		for page_no in range(_limit_page_count):
-			page_no += 1
-			_logger.info(f'try parsing {page_no=}')
-			url = f'https://www.ya-moon.com/newboard/yamoonboard/board-list.asp?fullboardname=yamoonmemberboard&mtablename=subtitled&page={page_no}'
-
-			for _ in range(DEF_RETRY_COUNT):
-				response = requests.get(url, headers = DEFAULT_HEADERS)
-				if (response.status_code == 200):
-					html = response.text
-					# print(html)
-					ret = parseScriptList(info_list, html)
-					if (ret == ERR_DB_INTEGRITY):
-						is_ended = True
-					break
-				else:
-					_logger.warning(f'detail info reqest fail {_ + 1} : {response.status_code=}')
-				sleep(DEF_RETRY_WAIT_TIME)
-
-			if (is_ended):
-				break
-		# for info in info_list:
-		# 	insert(connection, cursor, info)
-		_logger.info(f'end: {len(info_list)} info parsed')
 
 
 if __name__ == '__main__':
