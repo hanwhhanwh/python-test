@@ -14,6 +14,7 @@ from urllib3 import request
 
 
 from avdb_data_model import AvdbDataModel
+from base_crawler import BaseBoardCrawler
 import avdb_constants as const
 
 import sys
@@ -52,88 +53,35 @@ DEFAULT_HEADERS: Final					= {
 
 DEF_YAMOON_CONF_FILE: Final				= '../../conf/yamoon_script.json'
 
+DEF_CONF_YAMOON: Final					= {
+	const.JSON_DB: {
+		const.JKEY_DB_HOST: 'localhost'
+		, const.JKEY_DB_PORT: '3306'
+		, const.JKEY_DB_NAME: 'MyDB'
+		, const.JKEY_DB_ENCODING: const.DEF_DB_ENCODING
+		, const.JKEY_USERNAME: 'username'
+		, const.JKEY_PASSWORD: 'password'
+	}
+	, const.JKEY_LIMIT_PAGE_COUNT: const.DEF_LIMIT_PAGE_COUNT
+}
 
 
 
 
 
 
-def getMagnetAddr(magnet_tag: Tag) -> str:
-	""" 주어진 주소로부터 마그넷 다운로드 정보를 받아와 반환합니다.
 
-	Args:
-		url (str): 마그넷 다운로드 정보를 받을 URL
-
-	Returns:
-		str: 마그넷 다운로드 정보. 찾지 못한 경우에는 None을 반환합니다.
-	"""
-	if (magnet_tag == None):
-		_logger.warning(f'not found btn-magnet')
-		return None
-
-	magnet_url = None
-	onclick: str = magnet_tag.get('onclick')
-	# print(onclick)
-	pos1 = onclick.find("'")
-	if (pos1 >= 0):
-		pos1 += 1
-		pos2 = onclick.find("'", pos1)
-		if (pos2 >= 0):
-			magnet_url = f'https://{URL_HOST_AVGOSU}{onclick[pos1:pos2]}'
-
-	url = magnet_url
-	if ( (url == None) or (url.strip() == '') ):
-		_logger.warning(f'not found magnet_url')
-		return None
-
-	for _ in range(DEF_RETRY_COUNT):
-		response = requests.get(url, headers = DEFAULT_HEADERS)
-		if (response.status_code == 200):
-			html = response.text
-			pos1 = html.find('magnet:?')
-			if (pos1 >= 0):
-				pos2 = html.find('"', pos1)
-				if (pos2 >= 0):
-					magnet_addr = html[pos1:pos2]
-					return (magnet_addr)
-		else:
-			_logger.warning(f'magnet_url requests fail! {_ + 1} ; {response.status_code=}')
-		sleep(DEF_RETRY_WAIT_TIME)
-	_logger.warning(f'retry fail!')
-	return None
-
-
-
-
-class YamoonScriptCrawler:
+class YamoonScriptCrawler(BaseBoardCrawler):
 	""" Yamoon script crawler """
 
 	def __init__(self) -> None:
 		""" 수집기 기본 생성자 """
-		self._header = DEFAULT_HEADERS
-		self._is_local = False
+		super(YamoonScriptCrawler, self).__init__()
+
+		self._headers = DEFAULT_HEADERS
 
 		make_init_folders(('../../logs', '../../db', '../../conf'))
 		self._logger: Logger = createLogger(log_path = '../../logs', log_filename = LOGGER_NAME, log_level = LOGGER_LEVEL_DEBUG)
-
-
-	def getChildCount(self, a_tag) -> int:
-		""" 자식 엘리먼트의 개수를 반환합니다.
-
-		Args:
-			a_tag (_type_): 태그 정보
-
-		Returns:
-			int: 태그의 자식 엘리먼트 개수
-		"""
-		count = 0
-		if ( (a_tag == None) or (not hasattr(a_tag, 'children')) ):
-			return count
-
-		for _ in a_tag.children:
-			count += 1
-
-		return count
 
 
 	def downloadScriptFile(self, to_file: str, info: dict) -> str:
@@ -146,45 +94,19 @@ class YamoonScriptCrawler:
 		Returns:
 			str: URL에서 가져온 HTML 소스 문자열
 		"""
-		# headers = self._header.copy()
-		# headers['referer'] = f'https://{URL_HOST_YAMOON}/newboard/yamoonboard/board-read.asp?fullboardname=yamoonmemberboard&mtablename=subtitled&num={info.get(const.CN_YAMOON_BOARD_NO)}'
 		url = f'https://{URL_HOST_YAMOON}{info.get(const.CN_SCRIPT_FILE_URL)}'
 		try:
-			file = get_req(url, headers = self._header)
+			file = get_req(url, headers = self._headers)
 		except Exception as e:
-			self._logger.error(f'file download fail: {to_file=} << {url=}')
+			self._logger.error(f'url request fail: {url=} ; {e}')
 			return const.ERR_FAIL_REQUEST
 		try:
 			open(to_file, 'wb').write(file.content)
 		except Exception as e:
-			self._logger.error(f'file download fail: {to_file=} << {url=}')
+			self._logger.error(f'file download fail: {to_file=} << {url=} ; {e}')
 			return const.ERR_DOWNLOAD_FILE
 
 		return 0
-
-
-	def fetchHtmlSource(self, url: str) -> str:
-		""" 주어진 URL에서 HTML 소스를 받아 반환합니다.
-
-		Args:
-			url (str): HTML 정보를 받아올 URL 주소
-
-		Returns:
-			str: URL에서 가져온 HTML 소스 문자열
-		"""
-		html = ''
-		for _ in range(const.DEF_RETRY_COUNT):
-			response = get_req(url, headers = self._header)
-			if (response.status_code == 200):
-				html = response.text
-				break
-			else:
-				self._logger.warning(f'fetch HTML fail {_ + 1} : {response.status_code=} : {url}')
-
-			sleep(const.DEF_RETRY_WAIT_TIME)
-
-		self._logger.debug(f'HTML source {len(html)=}')
-		return html
 
 
 	def fetchDetailHtmlSource(self, board_no: int = 1) -> str:
@@ -215,11 +137,10 @@ class YamoonScriptCrawler:
 			page_no (int): 목록의 페이지 번호
 
 		Returns:
-			str: _description_
+			str: 목록에 대한 HTML 소스
 		"""
 		html: str = ''
 		if (self._is_local):
-			# with open('./ym/list.html', encoding = 'UTF-8', newline = '\n') as f:
 			with open('./ym/list.html', encoding = 'UTF-8') as f:
 				html = f.read()
 		else:
@@ -231,13 +152,19 @@ class YamoonScriptCrawler:
 
 
 	def init(self) -> int:
+		self.initConf(DEF_YAMOON_CONF_FILE, DEF_CONF_YAMOON)
+
+		self._db = AvdbDataModel()
+		self._db.setLogger(self._logger)
+		self._db.connectDatabase(self._conf.get(const.JSON_DB))
+
 		try:
 			headers, error_message = load_json_conf('../../conf/yamoon_header.json')
 			if (error_message != None):
 				self._logger.error(f'Header loading fail! : {error_message}')
 				return const.ERR_HEADER_LOADING
 			else:
-				self._header = headers
+				self._headers = headers
 		except Exception as e:
 			self._logger.error(f'Header loading error : {e}')
 			return const.ERR_HEADER_LOADING2
@@ -278,8 +205,6 @@ class YamoonScriptCrawler:
 			script_info[const.CN_SCRIPT_NAME] = a_tag.text.strip()
 			script_info[const.CN_SCRIPT_FILE_URL] = a_tag.get("href")
 			self._logger.debug(f'  parsing {a_index=}: {script_info}')
-			to_file = f'./scripts/{script_info.get(const.CN_SCRIPT_NAME)}'
-			self.downloadScriptFile(to_file, script_info)
 			script_list.append(script_info)
 		return 0
 
@@ -326,42 +251,6 @@ class YamoonScriptCrawler:
 
 		self._logger.info(f'parsed info count = {len(info_list)}')
 		return 0
-		connection, cursor, error_code = connect_database(_conf.get(JSON_DB))
-		if (error_code != 0):
-			self._logger.error(f'database connection fail : {error_code}')
-			sys.exit(error_code)
-
-		for item_index, av_list_item in enumerate(table_tag.children, start = 1):
-			# 기본 정보 가져오기
-			info = dict()
-			a_tag = av_list_item.find('a')
-			info[const.CN_DETAIL_URL] = a_tag.get('href')
-			title: str = a_tag.get('title')
-			first_space = title.index(' ')
-			info[const.CN_FILM_ID] = title[:first_space]
-			info[const.CN_TITLE] = title[first_space + 1:]
-			size_info_tag = av_list_item.find('span')
-			info[const.CN_FILE_SIZE] = size_info_tag.text
-			date_info_tag = size_info_tag.next_sibling
-			date_info: str = date_info_tag.text
-			if (date_info.find(':') < 0):
-				date_info = f'{datetime.now().year}-{date_info}'
-			else:
-				today = datetime.now().strftime("%Y-%m-%d")
-				date_info = f'{today} {date_info}'
-			info[const.CN_DATE] = date_info
-
-			self._logger.info(f'getDetailInfo : {info[const.CN_FILM_ID]} / {info[const.CN_FILE_SIZE]} / {info[const.CN_DATE]}')
-			if (getDetailInfo(info)):
-				ret = insert(connection, cursor, info)
-				if (ret == const.ERR_DB_INTEGRITY):
-					return const.ERR_DB_INTEGRITY
-				info_list.append(info)
-			else:
-				self._logger.warning(f'Fetch fail of detail info! : {info}')
-
-		self._logger.info(f'parsed info count = {len(info_list)}')
-		return 0
 
 
 	def run(self) -> int:
@@ -369,27 +258,49 @@ class YamoonScriptCrawler:
 		ret = self.init()
 		if (ret != 0):
 			print(f'Internal Error (init): {ret=}')
-		self.setLocalMode()
+		# self.setLocalMode()
 
-		page_no = 1
-		html = self.fetchListHtmlSource(page_no)
-		print(f'list HTML {len(html)=}')
+		page_count = 1
+		# page_count = get_dict_value(self._conf, const.JKEY_LIMIT_PAGE_COUNT, const.DEF_LIMIT_PAGE_COUNT)
+		for page_no in range(1, page_count + 1):
+			self._logger.info(f'게시판 수집 시작 : {page_no=}')
+			html = self.fetchListHtmlSource(page_no)
+			if (html == ''):
+				self._logger.info(f'게시판 HTML 소스 가져오기 실패')
+				break
 
-		info_list = list()
-		ret = self.parseScriptList(info_list, html)
-		if (ret != 0):
-			print(f'Internal Error (parseScriptList): {ret=}')
-			return ret
+			info_list = list()
+			ret = self.parseScriptList(info_list, html)
+			if (ret != 0):
+				self._logger.error(f'Internal Error (parseScriptList): {ret=}')
+				return ret
 
-		info = info_list.pop()
-		html = self.fetchDetailHtmlSource(info.get(const.CN_YAMOON_BOARD_NO))
-		print(f'detail HTML {len(html)=}')
+			info_count = len(info_list)
+			for info_index in range(info_count):
+				info = info_list[info_index]
+				html = self.fetchDetailHtmlSource(info.get(const.CN_YAMOON_BOARD_NO))
+				if (html == ''):
+					self._logger.info(f'게시글 HTML 소스 가져오기 실패')
+					break
 
-		script_info_list = list()
-		ret = self.parseDetailInfo(script_info_list, info, html)
-		if (ret != 0):
-			print(f'Internal Error (parseDetailInfo): {ret=}')
-			return ret
+				script_info_list = list()
+				ret = self.parseDetailInfo(script_info_list, info, html)
+				if (ret != 0):
+					self._logger.error(f'Internal Error (parseDetailInfo): {ret=}')
+					return ret
+
+				inserted_count = 0
+				for script_info in script_info_list:
+					yamoon_no = self._db.insertYamoonScript(script_info)
+					if (yamoon_no > 0):
+						inserted_count += 1
+						to_file = f'./scripts/{script_info.get(const.CN_SCRIPT_NAME)}'
+						self.downloadScriptFile(to_file, script_info)
+
+				if (inserted_count == 0):
+					self._logger.info(f'crawling end.')
+					return 0
+
 
 
 	def setLocalMode(self) -> None:
