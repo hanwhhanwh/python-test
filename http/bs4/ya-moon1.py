@@ -202,7 +202,14 @@ class YamoonScriptCrawler(BaseBoardCrawler):
 			script_info[const.CN_BOARD_DATE]		= info.get(const.CN_BOARD_DATE)
 			script_info[const.CN_DETAIL_URL]		= info.get(const.CN_DETAIL_URL)
 
-			script_info[const.CN_SCRIPT_NAME] = a_tag.text.strip()
+			script_name = a_tag.text.strip()
+			try:
+				film_id = path.splitext(script_name)[0].replace('[', '').replace(']', ' ').replace('_', ' ').split(' ')[0]
+			except Exception as e:
+				self._logger.warning(f'not found film_id : {script_name=}')
+				film_id = None
+			script_info[const.CN_SCRIPT_NAME] = script_name
+			script_info[const.CN_FILM_ID] = film_id
 			script_info[const.CN_SCRIPT_FILE_URL] = a_tag.get("href")
 			self._logger.debug(f'  parsing {a_index=}: {script_info}')
 			script_list.append(script_info)
@@ -260,9 +267,10 @@ class YamoonScriptCrawler(BaseBoardCrawler):
 			print(f'Internal Error (init): {ret=}')
 		# self.setLocalMode()
 
-		page_count = 1
-		# page_count = get_dict_value(self._conf, const.JKEY_LIMIT_PAGE_COUNT, const.DEF_LIMIT_PAGE_COUNT)
-		for page_no in range(1, page_count + 1):
+		page_count = get_dict_value(self._conf, const.JKEY_LIMIT_PAGE_COUNT, const.DEF_LIMIT_PAGE_COUNT)
+		page_count = 46
+		# for page_no in range(1, page_count + 1):
+		for page_no in range(page_count, 0, -1):
 			self._logger.info(f'게시판 수집 시작 : {page_no=}')
 			html = self.fetchListHtmlSource(page_no)
 			if (html == ''):
@@ -289,6 +297,9 @@ class YamoonScriptCrawler(BaseBoardCrawler):
 					self._logger.error(f'Internal Error (parseDetailInfo): {ret=}')
 					return ret
 
+				if (len(script_info_list) == 0):
+					continue
+
 				inserted_count = 0
 				for script_info in script_info_list:
 					yamoon_no = self._db.insertYamoonScript(script_info)
@@ -301,6 +312,7 @@ class YamoonScriptCrawler(BaseBoardCrawler):
 					self._logger.info(f'crawling end.')
 					return 0
 
+			sleep(300 + page_no)
 
 
 	def setLocalMode(self) -> None:

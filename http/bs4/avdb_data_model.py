@@ -117,16 +117,16 @@ VALUES
 INSERT INTO `SCRIPTS_YAMOON`
 (
 	{CN_YAMOON_BOARD_NO}, {CN_UPLOADER}, {CN_SCRIPT_NAME}, {CN_FILE_SIZE}, {CN_SCRIPT_PATH}
-	, {CN_BOARD_DATE}
+	, {CN_BOARD_DATE}, {CN_FILM_ID}
 )
 VALUES
 (
 	%s, %s, %s, %s, %s
-	, %s
+	, %s, %s
 )
 	;"""
 			self._cursor.execute(query_insert, (yamoon_script.get(CN_YAMOON_BOARD_NO), yamoon_script.get(CN_UPLOADER), yamoon_script.get(CN_SCRIPT_NAME), yamoon_script.get(CN_FILE_SIZE), yamoon_script.get(CN_SCRIPT_PATH)
-							, yamoon_script.get(CN_BOARD_DATE)) )
+							, yamoon_script.get(CN_BOARD_DATE), yamoon_script.get(CN_FILM_ID)) )
 			script_yamoon_no = self._cursor.lastrowid
 			if script_yamoon_no == 0 or script_yamoon_no == None:
 				self._logger.error(f'insert execution fail : yamoon_script info')
