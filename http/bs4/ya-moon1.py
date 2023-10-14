@@ -37,7 +37,7 @@ DEFAULT_HEADERS: Final					= {
 	, 'Accept-Language': 'ko-KR,ko;q=0.9'
 	, 'Cache-Control': 'no-cache'
 	, 'Connection': 'keep-alive'
-	, 'Cookie': '_ga=GA1.1.1671706350.1696760343; filemanagercookie=hbesthee; ckCsrfToken=noF6XP41ac8kk970a5O7UC49pNFHs4xoOYY01hpv; ASPSESSIONIDCQCUSCAB=CLOPFFCBEMOCFLFNLDEPLOLB; member%5Finfo=username=hbesthee&grade=333&membercolor=lightskyblue&regtext=%EC%9D%BC%EB%B0%98&regcolor=btn%2Du%2Dblue&getetc=0&gradepoint=&loginsave=off&readok=no; ASPSESSIONIDAUERTCAA=ABPNDBPBKNLAENLGFNCMHFDA; _ga_N6N5N6RS06=GS1.1.1696852550.10.1.1696852552.58.0.0'
+	, 'Cookie': '_ga=GA1.1.1671706350.1696760343; filemanagercookie=hbesthee; ckCsrfToken=noF6XP41ac8kk970a5O7UC49pNFHs4xoOYY01hpv; ASPSESSIONIDCQCUSCAB=CLOPFFCBEMOCFLFNLDEPLOLB; ASPSESSIONIDAUERTCAA=HLODEBPBFPELGKFNBMBKFJFN; ASPSESSIONIDCEUTQRSC=PJFKOHGCFIBBALFOJHBJFBFC; member%5Finfo=username=hbesthee&loginsave=off&readok=no&regtext=%EC%9D%BC%EB%B0%98&regcolor=btn%2Du%2Dblue&getetc=0&gradepoint=&grade=333&membercolor=lightskyblue; ASPSESSIONIDCQBFDAAR=APKEFPHAIGCPEMNNDLJBNKME; _ga_N6N5N6RS06=GS1.1.1697268538.15.1.1697268660.58.0.0'
 	, 'Host': 'www.ya-moon.com'
 	, 'Pragma': 'no-cache'
 	, 'Sec-Fetch-Dest': 'document'
@@ -162,7 +162,8 @@ class YamoonScriptCrawler(BaseBoardCrawler):
 			headers, error_message = load_json_conf('../../conf/yamoon_header.json')
 			if (error_message != None):
 				self._logger.error(f'Header loading fail! : {error_message}')
-				return const.ERR_HEADER_LOADING
+				self._headers = DEFAULT_HEADERS
+				# return const.ERR_HEADER_LOADING
 			else:
 				self._headers = headers
 		except Exception as e:
@@ -204,7 +205,7 @@ class YamoonScriptCrawler(BaseBoardCrawler):
 
 			script_name = a_tag.text.strip()
 			try:
-				film_id = path.splitext(script_name)[0].replace('[', '').replace(']', ' ').replace('_', ' ').split(' ')[0]
+				film_id = path.splitext(script_name)[0].replace('[', '').replace(']', ' ').replace('_', ' ').replace('.', ' ').split(' ')[0]
 			except Exception as e:
 				self._logger.warning(f'not found film_id : {script_name=}')
 				film_id = None
@@ -267,10 +268,10 @@ class YamoonScriptCrawler(BaseBoardCrawler):
 			print(f'Internal Error (init): {ret=}')
 		# self.setLocalMode()
 
+		# page_count = 33
+		# for page_no in range(page_count, 0, -1):
 		page_count = get_dict_value(self._conf, const.JKEY_LIMIT_PAGE_COUNT, const.DEF_LIMIT_PAGE_COUNT)
-		page_count = 46
-		# for page_no in range(1, page_count + 1):
-		for page_no in range(page_count, 0, -1):
+		for page_no in range(1, page_count + 1):
 			self._logger.info(f'게시판 수집 시작 : {page_no=}')
 			html = self.fetchListHtmlSource(page_no)
 			if (html == ''):
@@ -305,7 +306,9 @@ class YamoonScriptCrawler(BaseBoardCrawler):
 					yamoon_no = self._db.insertYamoonScript(script_info)
 					if (yamoon_no > 0):
 						inserted_count += 1
-						to_file = f'./scripts/{script_info.get(const.CN_SCRIPT_NAME)}'
+						script_filename = script_info.get(const.CN_SCRIPT_NAME)
+						to_file = f'./scripts/{script_filename}'
+						self._logger.info(f'downloading : {script_filename}')
 						self.downloadScriptFile(to_file, script_info)
 
 				if (inserted_count == 0):
