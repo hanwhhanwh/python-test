@@ -28,7 +28,7 @@ from lib.json_util import get_dict_value, init_conf_files, make_init_folders, lo
 LOGGER_LEVEL_DEBUG: Final				= 10
 LOGGER_NAME: Final						= 'avgosu'
 
-URL_HOST_AVGOSU: Final					= 'avgosu1.com'
+URL_HOST_AVGOSU: Final					= 'avgosu2.com'
 HEADER_USER_AGENT: Final				= "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
 
 DOM_PATH_AV_LIST: Final					= '#fboardlist > div.list-container'
@@ -99,7 +99,7 @@ class AVGosuCrawler(BaseBoardCrawler):
 			return False
 
 		for _ in range(const.DEF_RETRY_COUNT):
-			response = requests.get(url, headers = DEFAULT_HEADERS)
+			response = requests.get(url, headers = self._headers)
 			if (response.status_code == 200):
 				html = response.text
 				soup = BeautifulSoup(html, 'html.parser')
@@ -120,6 +120,12 @@ class AVGosuCrawler(BaseBoardCrawler):
 
 				magnet_tag = soup.find('a', 'btn btn-magnet')
 				info[const.CN_MAGNET_ADDR] = self.getMagnetAddr(magnet_tag)
+
+				torrent_tag = soup.find('div', 'view-torrent')
+				if (torrent_tag.text.find('-HD.tor rent') > 0):
+					info[const.CN_RESOLUTION] = 'H'
+				else:
+					info[const.CN_RESOLUTION] = 'F'
 				return True
 			else:
 				self._logger.warning(f'detail info request fail {_ + 1} {url=} : {response.status_code=}')
@@ -174,76 +180,26 @@ class AVGosuCrawler(BaseBoardCrawler):
 		return None
 
 
-	def connect_database(self, conf: dict) -> tuple:
-		""" 주어진 DB 연결정보를 바탕으로 데이터베이스 연결을 시도합니다.
+	def init(self) -> int:
+		self.initConf(DEF_AVGOSU_CONF_FILE, DEF_CONF_AVGOSU)
 
-		Args:
-			conf (dict): 데이터베이스 연결에 필요한 상세 정보가 담겨있는 객체
-
-		Returns:
-			tuple: (connection, cursor, result_code) : result_code : 0 = 성공, -1 = 오류 발생 (세부 오류 내용은 로그 파일 확인하기)
-		"""
-		db_url = f"mysql+mysqlconnector://{conf.get(const.JKEY_USERNAME)}:{conf.get(const.JKEY_PASSWORD)}@{conf.get(const.JKEY_DB_HOST)}:{conf.get(const.JKEY_DB_PORT)}/{conf.get(const.JKEY_DB_NAME)}?charset=utf8mb4&collation=utf8mb4_general_ci"
-		self._logger.debug(f'connecting... : {conf.get(const.JKEY_DB_HOST)}:{conf.get(const.JKEY_DB_PORT)}/{conf.get(const.JKEY_DB_NAME)}')
-		engine = create_engine(db_url, encoding = conf.get(const.JKEY_DB_ENCODING))
-		if engine == None:
-			# 데이터베이스 연결을 위한 엔진 객체 얻기 실패
-			self._logger.error(f'database engine fail!')
-			return None, None, -1
+		self._db = AvdbDataModel()
+		self._db.setLogger(self._logger)
+		self._db.connectDatabase(self._conf.get(const.JSON_DB))
 
 		try:
-			connection = engine.raw_connection()
-		except Exception as e: # 데이터베이스 연결 실패
-			self._logger.error(f'database connection fail! >> {e}')
-			return None, None, -1
-
-		try:
-			cursor = connection.cursor()  # get Database cursor
-		except Exception as e: # Database cursor fail
-			self._logger.error(f'database cursor fail! >> {e}')
-			return None, None, -1
-
-		return connection, cursor, 0
-
-
-	def insert(self, connection, cursor, info: dict) -> int:
-		""" 수집한 정보를 등록합니다.
-
-		Args:
-			connection: 데이터베이스 연결 객체
-			cursor: 커서 객체
-			info (dict): AVGOSU에서 수집한 정보
-
-		Returns:
-			int: 수집한 정보 등록 성공 여부. 0 = 성공, 1 = 이미 동일 정보가 존재함, -1 = 기타 오류 (상세 정보는 오류 로그 확인 필요)
-		"""
-		try:
-			query_insert = f"""
-	INSERT INTO `AVGOSU`
-	(
-		{const.CN_DETAIL_URL}, {const.CN_TITLE}, {const.CN_FILM_ID}, {const.CN_DATE}, {const.CN_FILE_SIZE}
-		, {const.CN_COVER_IMAGE_URL}, {const.CN_THUMBNAIL_URL}, {const.CN_MAGNET_ADDR}
-	)
-	VALUES
-	(
-		%s, %s, %s, %s, %s
-		, %s, %s, %s
-	)
-	;"""
-			cursor.execute(query_insert, (info.get(CN_DETAIL_URL), info.get(CN_TITLE), info.get(CN_FILM_ID), info.get(CN_DATE), info.get(CN_FILE_SIZE)
-							, info.get(CN_COVER_IMAGE_URL), info.get(CN_THUMBNAIL_URL), info.get(CN_MAGNET_ADDR)))
-			avgosu_no = cursor.lastrowid
-			if avgosu_no == 0 or avgosu_no == None:
-				self._logger.error(f'insert execution fail : avgosu info')
-			connection.commit()
-		except IntegrityError as e:
-			self._logger.info(f'duplicated info : {info.get(CN_FILM_ID)} / {info.get(CN_FILE_SIZE)} / {info.get(CN_DATE)}')
-			return ERR_DB_INTEGRITY
+			headers, error_message = load_json_conf('../../conf/avgosu_header.json')
+			if (error_message != None):
+				self._logger.error(f'Header loading fail! : {error_message}')
+				self._headers = DEFAULT_HEADERS
+				# return const.ERR_HEADER_LOADING
+			else:
+				self._headers = headers
 		except Exception as e:
-			self._logger.error(f'insert execution fail : avgosu info2 >> {e}')
-			return ERR_DB_INTERNAL
+			self._logger.error(f'Header loading error : {e}')
+			return const.ERR_HEADER_LOADING2
 
-		return avgosu_no
+		return 0
 
 
 	def parseAvInfo(self, info_list: list, html: str) -> int:
@@ -258,19 +214,14 @@ class AVGosuCrawler(BaseBoardCrawler):
 		"""
 		soup = BeautifulSoup(html, 'html.parser')
 		if (soup == None):
-			self._logger.error(f'h함ml.parser error')
+			self._logger.error(f'html.parser error')
 			return const.ERR_BS4_PARSER_FAIL
 
-		# 주요 목록 정보
+		# 목록 정보 파싱
 		av_list = soup.select_one(DOM_PATH_AV_LIST)
 		if (av_list == None):
 			self._logger.error(f'not found info list element.')
 			return const.ERR_BS4_ELM_NOT_FOUND
-
-		connection, cursor, error_code = self.connect_database(self._conf.get(const.JSON_DB))
-		if (error_code != 0):
-			self._logger.error(f'database connection fail : {error_code}')
-			sys.exit(error_code)
 
 		for item_index, av_list_item in enumerate(av_list.children, start = 1):
 			# 기본 정보 가져오기
@@ -279,7 +230,7 @@ class AVGosuCrawler(BaseBoardCrawler):
 			info[const.CN_DETAIL_URL] = a_tag.get('href')
 			title: str = a_tag.get('title')
 			first_space = title.index(' ')
-			info[const.CN_FILM_ID] = title[:first_space]
+			info[const.CN_FILM_ID] = title[:first_space].upper()
 			info[const.CN_TITLE] = title[first_space + 1:]
 			size_info_tag = av_list_item.find('span')
 			info[const.CN_FILE_SIZE] = size_info_tag.text
@@ -290,11 +241,12 @@ class AVGosuCrawler(BaseBoardCrawler):
 			else:
 				today = datetime.now().strftime("%Y-%m-%d")
 				date_info = f'{today} {date_info}'
-			info[const.CN_DATE] = date_info
+			info[const.CN_AVGOSU_DATE] = date_info
 
-			self._logger.info(f'getDetailInfo : {info[const.CN_FILM_ID]} / {info[const.CN_FILE_SIZE]} / {info[CN_DATE]}')
+			self._logger.info(f'getDetailInfo : {info[const.CN_FILM_ID]} / {info[const.CN_FILE_SIZE]} / {info[const.CN_AVGOSU_DATE]}')
 			if (self.getDetailInfo(info)):
-				ret = self.insert(connection, cursor, info)
+				ret = self._db.insertAvgosu(info)
+				# ret = self.insert(connection, cursor, info)
 				if (ret == const.ERR_DB_INTEGRITY):
 					return const.ERR_DB_INTEGRITY
 				info_list.append(info)
@@ -306,26 +258,20 @@ class AVGosuCrawler(BaseBoardCrawler):
 
 
 	def run(self) -> int:
+		""" 수집기 실행부
 
-		make_init_folders(('../../logs', '../../db', '../../conf'))
-		self._logger = createLogger(log_path = '../../logs', log_filename = LOGGER_NAME, log_level = LOGGER_LEVEL_DEBUG)
-
-		_conf, error_msg = load_json_conf(DEF_AVGOSU_CONF_FILE)
-		if (_conf == None):
-			self._logger.warning(error_msg)
-			_conf = DEF_CONF_AVGOSU
-			save_json_conf(DEF_AVGOSU_CONF_FILE, _conf)
-		# print(_conf)
-
-		# connection, cursor, error_code = connect_database(_conf.get(JSON_DB))
-		# if (error_code != 0):
-		# 	sys.exit(error_code)
+		Returns:
+			int: 실행 결과 코드값
+		"""
+		ret = self.init()
+		if (ret != 0):
+			print(f'Internal Error (init): {ret=}')
 
 		is_ended = False
 		info_list = list()
-		_limit_page_count = get_dict_value(_conf, const.JKEY_LIMIT_PAGE_COUNT, const.DEF_LIMIT_PAGE_COUNT)
-		for page_no in range(_limit_page_count):
-			page_no += 1
+		duplicated_count = 0
+		_limit_page_count = get_dict_value(self._conf, const.JKEY_LIMIT_PAGE_COUNT, const.DEF_LIMIT_PAGE_COUNT)
+		for page_no in range(1, _limit_page_count + 1):
 			self._logger.info(f'try parsing {page_no=}')
 			url = f'https://{URL_HOST_AVGOSU}/torrent/etc.html?&page={page_no}'
 
@@ -336,7 +282,11 @@ class AVGosuCrawler(BaseBoardCrawler):
 					# print(html)
 					ret = self.parseAvInfo(info_list, html)
 					if (ret == const.ERR_DB_INTEGRITY):
-						is_ended = True
+						duplicated_count += 1
+						if (duplicated_count > 3):
+							is_ended = True # 연속으로 3개가 중복이라면, 종료함
+					else:
+						duplicated_count = 0
 					break
 				else:
 					self._logger.warning(f'detail info reqest fail {_ + 1} : {response.status_code=}')

@@ -20,11 +20,12 @@ ERR_DB_INTEGRITY: Final					= -1002 # 중복된 데이터를 추가했을 경우
 CN_DETAIL_URL: Final					= 'detail_url'
 CN_TITLE: Final							= 'title'
 CN_FILM_ID: Final						= 'film_id'
-CN_DATE: Final							= 'avgosu_date'
+CN_AVGOSU_DATE: Final					= 'avgosu_date'
 CN_FILE_SIZE: Final						= 'file_size'
 CN_COVER_IMAGE_URL: Final				= 'cover_image_url'
 CN_THUMBNAIL_URL: Final					= 'thumbnail_url'
 CN_MAGNET_ADDR: Final					= 'magnet_addr'
+CN_RESOLUTION: Final					= 'resolution'
 
 
 CN_YAMOON_BOARD_NO: Final				= 'yamoon_board_no'

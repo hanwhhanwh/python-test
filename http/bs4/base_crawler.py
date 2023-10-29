@@ -90,6 +90,15 @@ class BaseBoardCrawler:
 		return html
 
 
+	def init(self) -> int:
+		""" 수집기 초기화를 수행합니다.
+
+		Returns:
+			int: 초기화 수행 결과. 0 = success, else internal error
+		"""
+		pass
+
+
 	def initConf(self, conf_file: str, def_conf: dict) -> None:
 		""" 설정 파일을 로딩합니다.
 
@@ -102,6 +111,7 @@ class BaseBoardCrawler:
 			self._logger.warning(error_msg)
 			self._conf = def_conf
 			save_json_conf(conf_file, self._conf)
+		# self._logger.debug(_conf)
 
 
 

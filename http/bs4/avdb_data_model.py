@@ -78,23 +78,23 @@ class AvdbDataModel:
 			query_insert = f"""
 INSERT INTO `AVGOSU`
 (
-	{CN_DETAIL_URL}, {CN_TITLE}, {CN_FILM_ID}, {CN_DATE}, {CN_FILE_SIZE}
-	, {CN_COVER_IMAGE_URL}, {CN_THUMBNAIL_URL}, {CN_MAGNET_ADDR}
+	{CN_DETAIL_URL}, {CN_TITLE}, {CN_FILM_ID}, {CN_AVGOSU_DATE}, {CN_FILE_SIZE}
+	, {CN_COVER_IMAGE_URL}, {CN_THUMBNAIL_URL}, {CN_MAGNET_ADDR}, {CN_RESOLUTION}
 )
 VALUES
 (
 	%s, %s, %s, %s, %s
-	, %s, %s, %s
+	, %s, %s, %s, %s
 )
 	;"""
-			self._cursor.execute(query_insert, (avgosu_info.get(CN_DETAIL_URL), avgosu_info.get(CN_TITLE), avgosu_info.get(CN_FILM_ID), avgosu_info.get(CN_DATE), avgosu_info.get(CN_FILE_SIZE)
-							, avgosu_info.get(CN_COVER_IMAGE_URL), avgosu_info.get(CN_THUMBNAIL_URL), avgosu_info.get(CN_MAGNET_ADDR)))
+			self._cursor.execute(query_insert, (avgosu_info.get(CN_DETAIL_URL), avgosu_info.get(CN_TITLE), avgosu_info.get(CN_FILM_ID), avgosu_info.get(CN_AVGOSU_DATE), avgosu_info.get(CN_FILE_SIZE)
+							, avgosu_info.get(CN_COVER_IMAGE_URL), avgosu_info.get(CN_THUMBNAIL_URL), avgosu_info.get(CN_MAGNET_ADDR), avgosu_info.get(CN_RESOLUTION)))
 			avgosu_no = self._cursor.lastrowid
 			if avgosu_no == 0 or avgosu_no == None:
 				self._logger.error(f'insert execution fail : avgosu info')
 			self._connection.commit()
 		except IntegrityError as ie:
-			self._logger.info(f'duplicated info : {avgosu_info.get(CN_FILM_ID)} / {avgosu_info.get(CN_FILE_SIZE)} / {avgosu_info.get(CN_DATE)} : {ie}')
+			self._logger.info(f'duplicated info : {avgosu_info.get(CN_FILM_ID)} / {avgosu_info.get(CN_FILE_SIZE)} / {avgosu_info.get(CN_AVGOSU_DATE)} : {ie}')
 			return ERR_DB_INTEGRITY
 		except Exception as e:
 			self._logger.error(f'insert execution fail : avgosu info2 >> {e}')
