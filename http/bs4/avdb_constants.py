@@ -51,7 +51,7 @@ DEF_LIMIT_PAGE_COUNT: Final				= 10 # 자료수집할 최대 페이지 수
 DEF_RETRY_COUNT: Final					= 3 # request를 다시 시도할 회수
 DEF_RETRY_WAIT_TIME: Final				= 3 # request를 다시 시도하기 전 대기시간 (초)
 DEF_DB_ENCODING: Final					= 'utf-8'
-
+DEF_MAX_DUPLICATED_COUNT: Final			= 3 # 중복자료 확인 최대 수
 
 DEF_CONF_DATABASE: Final				= { # 데이터베이스 설정 기본값
 	JKEY_DB_HOST: 'localhost'

@@ -78,6 +78,7 @@ class AVGosuCrawler(BaseBoardCrawler):
 		""" 수집기 기본 생성자 """
 		super(AVGosuCrawler, self).__init__()
 
+		self._duplicated_count = 0
 		self._headers = DEFAULT_HEADERS
 
 		make_init_folders(('../../logs', '../../db', '../../conf'))
@@ -248,7 +249,11 @@ class AVGosuCrawler(BaseBoardCrawler):
 				ret = self._db.insertAvgosu(info)
 				# ret = self.insert(connection, cursor, info)
 				if (ret == const.ERR_DB_INTEGRITY):
-					return const.ERR_DB_INTEGRITY
+					self._duplicated_count += 1
+					if (self._duplicated_count > const.DEF_MAX_DUPLICATED_COUNT):
+						return const.ERR_DB_INTEGRITY
+				else:
+					self._duplicated_count = 0
 				info_list.append(info)
 			else:
 				self._logger.warning(f'Fetch fail of detail info! : {info}')
@@ -269,7 +274,6 @@ class AVGosuCrawler(BaseBoardCrawler):
 
 		is_ended = False
 		info_list = list()
-		duplicated_count = 0
 		_limit_page_count = get_dict_value(self._conf, const.JKEY_LIMIT_PAGE_COUNT, const.DEF_LIMIT_PAGE_COUNT)
 		for page_no in range(1, _limit_page_count + 1):
 			self._logger.info(f'try parsing {page_no=}')
@@ -282,11 +286,7 @@ class AVGosuCrawler(BaseBoardCrawler):
 					# print(html)
 					ret = self.parseAvInfo(info_list, html)
 					if (ret == const.ERR_DB_INTEGRITY):
-						duplicated_count += 1
-						if (duplicated_count > 3):
-							is_ended = True # 연속으로 3개가 중복이라면, 종료함
-					else:
-						duplicated_count = 0
+						is_ended = True # 연속으로 3개가 중복이라면, 종료함
 					break
 				else:
 					self._logger.warning(f'detail info reqest fail {_ + 1} : {response.status_code=}')
