@@ -1,3 +1,7 @@
+# rknnlite2 YoloV5s demo1 (Python 3.11.2 tested)
+# date	2023-11-03
+# author	hbesthee@naver.com
+
 import cv2
 import numpy as np
 from rknnlite.api import RKNNLite
@@ -5,13 +9,9 @@ import time
 import argparse
 
 
-# Model from https://github.com/airockchip/rknn_model_zoo
-ONNX_MODEL = '../model/yolov5s_relu.onnx'
 RKNN_MODEL = '../model/v1.5.2/yolov5s_relu_int8-1.5.2.rknn'
 IMG_PATH = '../dataset/bus.jpg'
 DATASET = '../dataset/dataset.txt'
-
-QUANTIZE_ON = True
 
 OBJ_THRESH = 0.25
 NMS_THRESH = 0.45
