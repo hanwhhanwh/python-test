@@ -8,3 +8,5 @@ cv/dnn/yolov4-tiny.weights
 cv/dnn/yolov4.weights
 output.mp4
 http/hello/static/
+http/bs4/scripts/
+conf/
