@@ -28,7 +28,7 @@ from lib.json_util import get_dict_value, init_conf_files, make_init_folders, lo
 LOGGER_LEVEL_DEBUG: Final				= 10
 LOGGER_NAME: Final						= 'avgosu'
 
-URL_HOST_AVGOSU: Final					= 'avgosu3.com'
+URL_HOST_AVGOSU: Final					= 'avgosu4.com'
 HEADER_USER_AGENT: Final				= "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
 
 DOM_PATH_AV_LIST: Final					= '#fboardlist > div.list-container'
@@ -123,7 +123,7 @@ class AVGosuCrawler(BaseBoardCrawler):
 				info[const.CN_MAGNET_ADDR] = self.getMagnetAddr(magnet_tag)
 
 				torrent_tag = soup.find('div', 'view-torrent')
-				if (torrent_tag.text.find('-HD.tor rent') > 0):
+				if (torrent_tag.text.find('-HD.torrent') > 0):
 					info[const.CN_RESOLUTION] = 'H'
 				else:
 					info[const.CN_RESOLUTION] = 'F'
@@ -275,7 +275,7 @@ class AVGosuCrawler(BaseBoardCrawler):
 		is_ended = False
 		info_list = list()
 		_limit_page_count = get_dict_value(self._conf, const.JKEY_LIMIT_PAGE_COUNT, const.DEF_LIMIT_PAGE_COUNT)
-		for page_no in range(4, _limit_page_count + 1):
+		for page_no in range(1, _limit_page_count + 1):
 			self._logger.info(f'try parsing {page_no=}')
 			url = f'https://{URL_HOST_AVGOSU}/torrent/etc.html?&page={page_no}'
 
