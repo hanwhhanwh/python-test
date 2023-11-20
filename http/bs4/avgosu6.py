@@ -94,7 +94,7 @@ class AVGosuCrawler(BaseBoardCrawler):
 		Returns:
 			bool: 정보 획득 성공 여부. 필수 항목들을 모두 가져왔는가?
 		"""
-		url: str = info[const.CN_DETAIL_URL]
+		url: str = f'https://{URL_HOST_AVGOSU}' + info[const.CN_DETAIL_URL]
 		if ( (url == None) or (url.strip() == '') ):
 			self._logger.warning(f'URL info fail! : {info}')
 			return False
@@ -115,9 +115,12 @@ class AVGosuCrawler(BaseBoardCrawler):
 				
 				img_tag = view_img.next_element
 				# img_tag = next(view_img)
-				info[const.CN_COVER_IMAGE_URL] = img_tag.get('src')
+				img_url = img_tag.get('src')
+				info[const.CN_COVER_IMAGE_URL] = img_url[img_url.find('/', 8):] if (img_url != None) else None
 				img_tag = img_tag.next_element
-				info[const.CN_THUMBNAIL_URL] = img_tag.get('src')
+				img_url = img_tag.get('src')
+				info[const.CN_THUMBNAIL_URL] = img_url[img_url.find('/', 8):] if (img_url != None) else None
+				
 
 				magnet_tag = soup.find('a', 'btn btn-magnet')
 				info[const.CN_MAGNET_ADDR] = self.getMagnetAddr(magnet_tag)
@@ -228,7 +231,8 @@ class AVGosuCrawler(BaseBoardCrawler):
 			# 기본 정보 가져오기
 			info = dict()
 			a_tag = av_list_item.find('a')
-			info[const.CN_DETAIL_URL] = a_tag.get('href')
+			url = a_tag.get('href')
+			info[const.CN_DETAIL_URL] = url[url.find('/', 8):url.find('?', 8)]
 			title: str = a_tag.get('title')
 			first_space = title.index(' ')
 			info[const.CN_FILM_ID] = title[:first_space].upper()
@@ -250,7 +254,7 @@ class AVGosuCrawler(BaseBoardCrawler):
 				# ret = self.insert(connection, cursor, info)
 				if (ret == const.ERR_DB_INTEGRITY):
 					self._duplicated_count += 1
-					if (self._duplicated_count > const.DEF_MAX_DUPLICATED_COUNT):
+					if (self._duplicated_count > self._max_duplicated_count):
 						return const.ERR_DB_INTEGRITY
 				else:
 					self._duplicated_count = 0
@@ -275,7 +279,10 @@ class AVGosuCrawler(BaseBoardCrawler):
 		is_ended = False
 		info_list = list()
 		_limit_page_count = get_dict_value(self._conf, const.JKEY_LIMIT_PAGE_COUNT, const.DEF_LIMIT_PAGE_COUNT)
-		for page_no in range(1, _limit_page_count + 1):
+		self._max_duplicated_count = get_dict_value(self._conf, const.JKEY_MAX_DUPLICATED_COUNT, const.DEF_MAX_DUPLICATED_COUNT)
+		start_page_no = get_dict_value(self._conf, const.JKEY_START_PAGE_NO, 1)
+		self._logger.info(f'GATHERING started: {start_page_no=}, {self._max_duplicated_count=}, {_limit_page_count=}')
+		for page_no in range(start_page_no, _limit_page_count + 1):
 			self._logger.info(f'try parsing {page_no=}')
 			url = f'https://{URL_HOST_AVGOSU}/torrent/etc.html?&page={page_no}'
 

@@ -46,6 +46,8 @@ JKEY_DB_ENCODING: Final					= 'encoding'
 JKEY_USERNAME: Final					= 'username'
 JKEY_PASSWORD: Final					= 'password'
 JKEY_LIMIT_PAGE_COUNT: Final			= 'limit_page_count'
+JKEY_MAX_DUPLICATED_COUNT: Final		= 'max_duplicated_count'
+JKEY_START_PAGE_NO: Final				= 'start_page_no'
 
 DEF_LIMIT_PAGE_COUNT: Final				= 10 # 자료수집할 최대 페이지 수
 DEF_RETRY_COUNT: Final					= 3 # request를 다시 시도할 회수
