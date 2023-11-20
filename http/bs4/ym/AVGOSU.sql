@@ -19,3 +19,16 @@ CREATE TABLE `AVGOSU`
 COMMENT='AVGOSU에서 수집한 정보 테이블'
 COLLATE='utf8mb4_unicode_ci'
 ENGINE=InnoDB
+
+/*
+-- URL 정보에서 호스트 정보 제거하고 경로정보만 남겨 두기
+UPDATE `AVGOSU` SET
+	detail_url = REPLACE(detail_url, 'https://avgosu1.com', '')
+	, cover_image_url = REPLACE(cover_image_url, 'https://avgosu1.com', '')
+	, thumbnail_url = REPLACE(thumbnail_url, 'https://avgosu1.com', '')
+;
+
+UPDATE `AVGOSU` SET
+	resolution = 'H'
+WHERE file_size LIKE '2.%'
+*/
