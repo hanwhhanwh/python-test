@@ -3,8 +3,7 @@
 # author	hbesthee@naver.com
 # reference : https://stackoverflow.com/questions/56856153/
 
-from datetime import datetime
-from flask import Flask, Blueprint
+from flask import Flask
 from threading import Thread
 from time import sleep
 
