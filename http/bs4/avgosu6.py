@@ -237,10 +237,11 @@ class AVGosuCrawler(BaseBoardCrawler):
 			first_space = title.index(' ')
 			info[const.CN_FILM_ID] = title[:first_space].upper()
 			info[const.CN_TITLE] = title[first_space + 1:]
-			size_info_tag = av_list_item.find('span')
-			info[const.CN_FILE_SIZE] = size_info_tag.text
-			date_info_tag = size_info_tag.next_sibling
-			date_info: str = date_info_tag.text
+			list_details_tag = av_list_item.find(class_ = 'list-details text-muted ellipsis')
+			size_info_tag = list_details_tag.find('span') if (list_details_tag) else None
+			info[const.CN_FILE_SIZE] = size_info_tag.text if (size_info_tag) else None
+			date_info_tag = size_info_tag.next_sibling if (size_info_tag) else None
+			date_info: str = date_info_tag.text if (date_info_tag) else None
 			if (date_info.find(':') < 0):
 				date_info = f'{datetime.now().year}-{date_info}'
 			else:
