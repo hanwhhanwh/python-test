@@ -2,6 +2,7 @@
 # make hbesthee@naver.com
 # date 2023-11-22
 
+from os import path
 import sys
 sys.path.append("../")
 from common.bus_call import bus_call
@@ -334,6 +335,11 @@ def osd_sink_pad_buffer_probe (pad, info, u_data) -> Any:
 #}
 # >> bus_call.bus_call() 로 대체됨
 
+
+
+
+
+"""
 static void
 cb_new_pad (GstElement *element,
 				GstPad     *pad,
@@ -366,23 +372,15 @@ cb_new_pad (GstElement *element,
 exit:
 	gst_object_unref (sink_pad)
 }
+"""
 
-/* Tracker config parsing */
 
-#define CHECK_ERROR(error) \
-	if (error) { \
-		g_printerr ("Error while parsing config file: %s\n", error->message) \
-		goto done \
-	}
 
+
+
+"""
 static gboolean
 set_tracker_properties (GstElement *nvtracker, char * config_file_name)
-{
-	gboolean ret = FALSE
-	GError *error = NULL
-	gchar **keys = NULL
-	gchar **key = NULL
-	GKeyFile *key_file = g_key_file_new ()
 
 	if (!g_key_file_load_from_file (key_file, config_file_name, G_KEY_FILE_NONE, &error)) {
 		g_printerr ("Failed to load config file: %s\n", error->message)
@@ -452,7 +450,45 @@ done:
 	}
 	return ret
 }
+"""
+def set_tracker_properties(nvtracker, config_file_name: str = 'lpr_sample_tracker_config.txt') -> bool:
+	""" Tracker config parsing 
 
+	Args:
+		nvtracker (GstElement): Tracker 객체
+		config_file_name (str, optional): Tracker 설정 파일명. Defaults to 'lpr_sample_tracker_config.txt'.
+
+	Returns:
+		bool: Tracker 설정 성공 여뷰
+	"""
+	config = configparser.ConfigParser()
+	config.read(config_file_name)
+	config.sections()
+
+	for key in config['tracker']:
+		if key == 'tracker-width':
+			tracker_width = config.getint('tracker', key)
+			nvtracker.set_property('tracker-width', tracker_width)
+		if key == 'tracker-height':
+			tracker_height = config.getint('tracker', key)
+			nvtracker.set_property('tracker-height', tracker_height)
+		if key == 'gpu-id':
+			tracker_gpu_id = config.getint('tracker', key)
+			nvtracker.set_property('gpu_id', tracker_gpu_id)
+		if key == 'll-lib-file':
+			tracker_ll_lib_file = config.get('tracker', key)
+			nvtracker.set_property('ll-lib-file', tracker_ll_lib_file)
+		if key == 'll-config-file':
+			tracker_ll_config_file = config.get('tracker', key)
+			nvtracker.set_property('ll-config-file', tracker_ll_config_file)
+		if key == 'enable-batch-process':
+			tracker_enable_batch_process = config.getint('tracker', key)
+			nvtracker.set_property('enable_batch_process',
+								tracker_enable_batch_process)
+
+
+
+"""
 /* nvdsanalytics_src_pad_buffer_probe  will extract metadata received on
  * nvdsanalytics src pad and extract nvanalytics metadata etc. */
 static GstPadProbeReturn
@@ -466,7 +502,30 @@ nvdsanalytics_src_pad_buffer_probe (GstPad * pad, GstPadProbeInfo * info,
 
 	return GST_PAD_PROBE_OK
 }
+"""
+""" nvdsanalytics_src_pad_buffer_probe  will extract metadata received on
+	nvdsanalytics src pad and extract nvanalytics metadata etc. """
+def nvdsanalytics_src_pad_buffer_probe(pad, info, u_data):
+	buf = info.get_buffer()
+	batch_meta = pyds.gst_buffer_get_nvds_batch_meta(hash(buf))
 
+	# ROI 등 분석 정보를 활용함 ; 예제에서는 분석결과를 출력만 함
+	# 세부적인 내용은 deepstream_nvdsanalytics_meta.cpp 소스 참조
+	#parse_nvdsanalytics_meta_data (batch_meta)
+
+	return Gst.PadProbeReturn.OK
+
+
+def print_help(command: str = "") -> None:
+	""" 간단한 사용법을 출력합니다. """
+	print(f"Usage: {command} [1:us model|2: ch_model] [1:file sink|2:fakesink|3:display sink]"
+			, "[0:ROI disable|0:ROI enable] [infer|triton|tritongrpc] <In mp4 filename> <in mp4 filename> ..."
+			, "<out H264 filename>\n")
+
+
+
+
+"""
 int
 main (int argc, char *argv[])
 {
@@ -514,102 +573,175 @@ main (int argc, char *argv[])
 	gboolean use_nvinfer_server = false
 	gboolean use_triton_grpc = false
 	guint car_mode = 1
-	/* Check input arguments */
-	if (argc == 2 && (g_str_has_suffix(argv[1], ".yml")
-			|| (g_str_has_suffix(argv[1], ".yaml")))) {
-		isYAML=TRUE
-	} else if (argc < 6 || argc > 133 || (atoi(argv[1]) != 1 && atoi(argv[1]) != 2) ||
-			(atoi(argv[2]) != 1 && atoi(argv[2]) != 2 && atoi(argv[2]) != 3) ||
-			(atoi(argv[3]) != 1 && atoi(argv[3]) != 0) ||
-			(strcmp("infer", argv[4]) && strcmp(ptriton, argv[4])
-			&& strcmp(ptriton_grpc, argv[4]))) {
-		g_printerr ("Usage: %s [1:us model|2: ch_model] [1:file sink|2:fakesink|"
-				"3:display sink] [0:ROI disable|0:ROI enable] [infer|triton|tritongrpc] <In mp4 filename> <in mp4 filename> ... "
-				"<out H264 filename>\n", argv[0])
-		return -1
-	}
+"""
+def main (argv) -> int:
+	""" 메인 함수 """
 
-	//For Chinese language supporting
-	setlocale(LC_CTYPE, "")
-	if (isYAML) {
-		if(ds_parse_group_enable(argv[1], TRITON)){
-			use_nvinfer_server = true
-			infer_plugin = "nvinferserver"
+	# 변수 초기화 부분
+	loop = None
+	pipeline, streammux, sink = None, None, None
+	primary_detector, secondary_detector, nvvidconv = None, None, None
+	nvosd, nvvidconv1, nvh264enc = None, None, None
+	secondary_classifier, capfilt, nvtile = None, None, None
+	tracker, nvdsanalytics, nvtile = None, None, None
+	queue1, queue2, queue3, queue4, queue5, queue6, queue7, queue8, queue9, queue10 = None, None, None, None, None, None, None, None, None, None
+	h264parser, source, decoder, mp4demux, parsequeue = list(128), list(128), list(128), list(128), list(128)
+	pgie_cfg_file_path, lpd_cfg_file_path, lpr_cfg_file_path = '', '', ''
 
-			if(ds_parse_group_type(argv[1], TRITON) == 1){
-				use_triton_grpc = true
-			}
-		}
+	if(is_aarch64()):
+		transform = None
 
-	} else {
-		if (!strcmp(ptriton, argv[4])|| !strcmp(ptriton_grpc, argv[4])) {
-			use_nvinfer_server = true
-			infer_plugin = "nvinferserver"
-			if(!strcmp(ptriton_grpc, argv[4])){
-				use_triton_grpc = true
-			}
-		}
-	}
-	g_print("use_nvinfer_server:%d, use_triton_grpc:%d\n", use_nvinfer_server, use_triton_grpc)
-	/* Standard GStreamer initialization */
-	gst_init (&argc, &argv)
-	loop = g_main_loop_new (NULL, FALSE)
+	bus, osd_sink_pad, caps, feature = None
+	bus_watch_id, tiler_rows, tiler_columns = 0, 0, 0
+	src_cnt = 0
 	
-	perf_measure.pre_time = GST_CLOCK_TIME_NONE
-	perf_measure.total_time = GST_CLOCK_TIME_NONE
-	perf_measure.count = 0  
+	perf_measure = None # perf_measure
 
-	/* Create gstreamer elements */
-	/* Create Pipeline element that will form a connection of other elements */
-	pipeline = gst_pipeline_new ("pipeline") 
+	ele_name = ''
+	sinkpad, srcpad = None, None
+	pad_name_sink, pad_name_src = "sink_0", "src"
 
-	/* Create nvstreammux instance to form batches from one or more sources. */
-	streammux = gst_element_factory_make ("nvstreammux", "stream-muxer")
+	isYAML, isH264 = False, True
+	g_list, iterator = None, None
+	arg_lang_mode, arg_sink_mode, arg_is_roi, arg_mode = 0, 0, 0, "infer"
+		
+	ptriton, ptriton_grpc, infer_plugin = "triton", "tritongrpc", "nvinfer"
+	use_nvinfer_server, use_triton_grpc = False, False
+	car_mode = 1
 
-	if (!pipeline || !streammux) {
-			g_printerr ("One element could not be created. Exiting.\n")
+	# Check input arguments
+	argc = len(argv)
+	if (argc == 2):
+		config_ext: str = path.splitext(argv[1])
+		if ( (config_ext.lower() == ".yml") or (config_ext.lower() == ".yaml")):
+			isYAML = True
+	else:
+		if ( (argc < 6) or (argc > 13) ):
+			print_help()
 			return -1
-	}
+		try:
+			arg_lang_mode = int(argv[1])
+			arg_sink_mode = int(argv[2])
+			arg_is_roi = int(argv[3])
+			arg_mode = str(argv[4])
+		except Exception as e:
+			print_help()
+			return -1
+		
+		if ( (arg_lang_mode not in [1, 2]) 
+				or (arg_sink_mode not in [1, 2, 3])
+				or (arg_is_roi not in [0, 1])
+				or (arg_mode.lower() not in ["infer", "triton", "tritongrpc"])
+				):
+			print_help(argv[0])
+			return -1
 
-	gst_bin_add (GST_BIN(pipeline), streammux)
+	# For Chinese language supporting
+	#setlocale(LC_CTYPE, "")
+	if (isYAML):
+		#if(ds_parse_group_enable(argv[1], TRITON)) {
+		#	use_nvinfer_server = true
+		#	infer_plugin = "nvinferserver"
 
-	if(!isYAML) {
-		for (src_cnt=0 src_cnt<(guint)argc-6 src_cnt++) {
-			g_list = g_list_append(g_list, argv[src_cnt + 5])
-		}
-	} else {
-			if (NVDS_YAML_PARSER_SUCCESS != nvds_parse_source_list(&g_list, argv[1], "source-list")) {
-				g_printerr ("No source is found. Exiting.\n")
-				return -1
-			}
-	}
+		#	if(ds_parse_group_type(argv[1], TRITON) == 1){
+		#		use_triton_grpc = true
+		#	}
+		#}
+		pass
+	else:
+		if (arg_mode.lower() in ["triton", "tritongrpc"]):
+			use_nvinfer_server = True
+			infer_plugin = "nvinferserver"
+			if(arg_mode.lower() == "tritongrpc"):
+				use_triton_grpc = True
+
+	print(f"use_nvinfer_server: {use_nvinfer_server}, use_triton_grpc: {use_triton_grpc}\n")
+
+	# Standard GStreamer initialization
+	#gst_init (&argc, &argv)
+	GObject.threads_init()
+	Gst.init(None)
+	#loop = g_main_loop_new (NULL, FALSE)
+	# create an event loop and feed gstreamer bus mesages to it
+	loop = GLib.MainLoop()
 	
-	/* Multiple source files */
-	for (iterator = g_list, src_cnt=0 iterator iterator = iterator->next,src_cnt++) {
-		/* Only h264 element stream with mp4 container is supported. */
-		g_snprintf (ele_name, 64, "file_src_%d", src_cnt)
+	#perf_measure.pre_time = GST_CLOCK_TIME_NONE
+	#perf_measure.total_time = GST_CLOCK_TIME_NONE
+	#perf_measure.count = 0  
 
-		/* Source element for reading from the file */
-		source[src_cnt] = gst_element_factory_make ("filesrc", ele_name)
+	# Create gstreamer elements
+	# Create Pipeline element that will form a connection of other elements
+	#pipeline = gst_pipeline_new ("pipeline") 
+	pipeline = Gst.Pipeline()
+	if not pipeline:
+		Gst.error(" Unable to create Pipeline")
 
-		g_snprintf (ele_name, 64, "mp4demux_%d", src_cnt)
-		mp4demux[src_cnt] = gst_element_factory_make ("qtdemux", ele_name)
+	# Create nvstreammux instance to form batches from one or more sources.
+	#streammux = gst_element_factory_make ("nvstreammux", "stream-muxer")
+	streammux = Gst.ElementFactory.make("nvstreammux", "stream-muxer")
+	if (not streammux):
+			print("nvstreammux element could not be created. Exiting.\n")
+			return -1
 
-		g_snprintf (ele_name, 64, "h264parser_%d", src_cnt)
+	#gst_bin_add (GST_BIN(pipeline), streammux)
+	pipeline.add(streammux)
+
+	#if(!isYAML) {
+	#	for (src_cnt=0 src_cnt<(guint)argc-6 src_cnt++) {
+	#		g_list = g_list_append(g_list, argv[src_cnt + 5])
+	#	}
+	#} else {
+	#		if (NVDS_YAML_PARSER_SUCCESS != nvds_parse_source_list(&g_list, argv[1], "source-list")) {
+	#			g_printerr ("No source is found. Exiting.\n")
+	#			return -1
+	#		}
+	#}
+	if(not isYAML):
+		src_cnt = 0
+		g_list = list()
+		for src_cnt in range (argc - 6):
+			g_list = g_list.append(argv[src_cnt + 5])
+	else:
+		g_list = list()
+		#if (NVDS_YAML_PARSER_SUCCESS != nvds_parse_source_list(&g_list, argv[1], "source-list")) {
+		#	g_printerr ("No source is found. Exiting.\n")
+		#	return -1
+	
+	# Multiple source files
+	#for (iterator = g_list, src_cnt=0 iterator iterator = iterator->next,src_cnt++) {
+	for source_index in range(src_cnt):
+		# Only h264 element stream with mp4 container is supported.
+		#g_snprintf (ele_name, 64, "file_src_%d", src_cnt)
+
+		# Source element for reading from the file
+		#source[src_cnt] = gst_element_factory_make ("filesrc", ele_name)
+		source[source_index] = Gst.ElementFactory.make("filesrc", f"file_src_{source_index}")
+
+		#g_snprintf (ele_name, 64, "mp4demux_%d", src_cnt)
+		#mp4demux[src_cnt] = gst_element_factory_make ("qtdemux", ele_name)
+		mp4demux[src_cnt] = Gst.ElementFactory.make("qtdemux", f"mp4demux_{source_index}")
+
+		#g_snprintf (ele_name, 64, "h264parser_%d", src_cnt)
+		#h264parser[src_cnt] = gst_element_factory_make ("h264parse", ele_name)
 		h264parser[src_cnt] = gst_element_factory_make ("h264parse", ele_name)
 			
-		g_snprintf (ele_name, 64, "parsequeue_%d", src_cnt)
+		#g_snprintf (ele_name, 64, "parsequeue_%d", src_cnt)
+		#parsequeue[src_cnt] = gst_element_factory_make ("queue", ele_name)
 		parsequeue[src_cnt] = gst_element_factory_make ("queue", ele_name)
 
-		/* Use nvdec_h264 for hardware accelerated decode on GPU */
-		g_snprintf (ele_name, 64, "decoder_%d", src_cnt)
+		# Use nvdec_h264 for hardware accelerated decode on GPU
+		#g_snprintf (ele_name, 64, "decoder_%d", src_cnt)
+		#decoder[src_cnt] = gst_element_factory_make ("nvv4l2decoder", ele_name)
 		decoder[src_cnt] = gst_element_factory_make ("nvv4l2decoder", ele_name)
 			
-		if(!source[src_cnt] || !h264parser[src_cnt] || !decoder[src_cnt] ||
-				!mp4demux[src_cnt]) {
+		#if(!source[src_cnt] || !h264parser[src_cnt] || !decoder[src_cnt] ||
+		#		!mp4demux[src_cnt]) {
+		#	g_printerr ("One element could not be created. Exiting.\n")
+		#	return -1
+		#}
+		if (!source[src_cnt] || !h264parser[src_cnt] || !decoder[src_cnt] || !mp4demux[src_cnt]):
 			g_printerr ("One element could not be created. Exiting.\n")
 			return -1
-		}
 			
 		gst_bin_add_many (GST_BIN (pipeline), source[src_cnt], mp4demux[src_cnt],
 				h264parser[src_cnt], parsequeue[src_cnt], decoder[src_cnt], NULL)
@@ -656,63 +788,102 @@ main (int argc, char *argv[])
 	}
 	g_list_free(g_list)
 
-	/* Create three nvinfer instances for two detectors and one classifier*/
-	primary_detector = gst_element_factory_make (infer_plugin,
-							"primary-infer-engine1")
+	# Create three nvinfer instances for two detectors and one classifier
+	#primary_detector = gst_element_factory_make (infer_plugin, "primary-infer-engine1")
+	#secondary_detector = gst_element_factory_make (infer_plugin, "secondary-infer-engine1")
+	#secondary_classifier = gst_element_factory_make (infer_plugin, "secondary-infer-engine2")
+	primary_detector = Gst.ElementFactory.make(infer_plugin, "primary-infer-engine1")
+	secondary_detector = Gst.ElementFactory.make(infer_plugin, "secondary-infer-engine1")
+	secondary_classifier = Gst.ElementFactory.make(infer_plugin, "secondary-infer-engine2")
 
-	secondary_detector = gst_element_factory_make (infer_plugin,
-							"secondary-infer-engine1")
+	# Use convertor to convert from NV12 to RGBA as required by nvosd
+	#nvvidconv = gst_element_factory_make ("nvvideoconvert", "nvvid-converter")
+	nvvidconv = Gst.ElementFactory.make("nvvideoconvert", "nvvid-converter")
 
-	secondary_classifier = gst_element_factory_make (infer_plugin,
-							"secondary-infer-engine2")
+	# Create OSD to draw on the converted RGBA buffer
+	#nvosd = gst_element_factory_make ("nvdsosd", "nv-onscreendisplay")
+	#nvvidconv1 = gst_element_factory_make ("nvvideoconvert", "nvvid-converter1")
+	nvosd = Gst.ElementFactory.make("nvdsosd", "nv-onscreendisplay")
+	nvvidconv1 = Gst.ElementFactory.make("nvvideoconvert", "nvvid-converter1")
 
-	/* Use convertor to convert from NV12 to RGBA as required by nvosd */
-	nvvidconv = gst_element_factory_make ("nvvideoconvert", "nvvid-converter")
+	#if (isYAML) {
+	#	if (!ds_parse_enc_type(argv[1], "output"))
+	#		isH264 = true
+	#	else
+	#		isH264 = false
+	#}
+	if (isYAML):
+		if (!ds_parse_enc_type(argv[1], "output")):
+			isH264 = True
+		else:
+			isH264 = False
 
-	/* Create OSD to draw on the converted RGBA buffer */
-	nvosd = gst_element_factory_make ("nvdsosd", "nv-onscreendisplay")
-
-	nvvidconv1 = gst_element_factory_make ("nvvideoconvert", "nvvid-converter1")
-
-	if (isYAML) {
-			if (!ds_parse_enc_type(argv[1], "output"))
-				isH264 = true
-			else
-				isH264 = false
-	}
-
+	#if (isH264)
+	#	nvh264enc = gst_element_factory_make ("nvv4l2h264enc" ,"nvvideo-h264enc")
+	#else:
+	#	nvh264enc = gst_element_factory_make ("nvv4l2h265enc" ,"nvvideo-h265enc")
 	if (isH264)
-			nvh264enc = gst_element_factory_make ("nvv4l2h264enc" ,"nvvideo-h264enc")
-	else
-			nvh264enc = gst_element_factory_make ("nvv4l2h265enc" ,"nvvideo-h265enc")
+		nvh264enc = Gst.ElementFactory.make("nvv4l2h264enc" ,"nvvideo-h264enc")
+	else:
+		nvh264enc = Gst.ElementFactory.make("nvv4l2h265enc" ,"nvvideo-h265enc")
 
-	capfilt = gst_element_factory_make ("capsfilter", "nvvideo-caps")
+	#capfilt = gst_element_factory_make ("capsfilter", "nvvideo-caps")
+	#nvtile = gst_element_factory_make ("nvmultistreamtiler", "nvtiler")
+	#tracker = gst_element_factory_make ("nvtracker", "nvtracker")
+	capfilt = Gst.ElementFactory.make("capsfilter", "nvvideo-caps")
+	nvtile  = Gst.ElementFactory.make("nvmultistreamtiler", "nvtiler")
+	tracker = Gst.ElementFactory.make("nvtracker", "nvtracker")
 
-	nvtile = gst_element_factory_make ("nvmultistreamtiler", "nvtiler")
-
-	tracker = gst_element_factory_make ("nvtracker", "nvtracker")
-
-	/* Use nvdsanalytics to perform analytics on object */
-	nvdsanalytics = gst_element_factory_make ("nvdsanalytics", "nvdsanalytics")
+	# Use nvdsanalytics to perform analytics on object
+	#nvdsanalytics = gst_element_factory_make ("nvdsanalytics", "nvdsanalytics")
+	nvdsanalytics = Gst.ElementFactory.make("nvdsanalytics", "nvdsanalytics")
 	
-	queue1 = gst_element_factory_make ("queue", "queue1")
-	queue2 = gst_element_factory_make ("queue", "queue2")
-	queue3 = gst_element_factory_make ("queue", "queue3")
-	queue4 = gst_element_factory_make ("queue", "queue4")
-	queue5 = gst_element_factory_make ("queue", "queue5")
-	queue6 = gst_element_factory_make ("queue", "queue6")
-	queue7 = gst_element_factory_make ("queue", "queue7")
-	queue8 = gst_element_factory_make ("queue", "queue8")
-	queue9 = gst_element_factory_make ("queue", "queue9")
-	queue10 = gst_element_factory_make ("queue", "queue10")
+	#queue1 = gst_element_factory_make ("queue", "queue1")
+	#queue2 = gst_element_factory_make ("queue", "queue2")
+	#queue3 = gst_element_factory_make ("queue", "queue3")
+	#queue4 = gst_element_factory_make ("queue", "queue4")
+	#queue5 = gst_element_factory_make ("queue", "queue5")
+	#queue6 = gst_element_factory_make ("queue", "queue6")
+	#queue7 = gst_element_factory_make ("queue", "queue7")
+	#queue8 = gst_element_factory_make ("queue", "queue8")
+	#queue9 = gst_element_factory_make ("queue", "queue9")
+	#queue10 = gst_element_factory_make ("queue", "queue10")
+	queue1  = Gst.ElementFactory.make("queue","queue1")
+	queue2  = Gst.ElementFactory.make("queue","queue2")
+	queue3  = Gst.ElementFactory.make("queue","queue3")
+	queue4  = Gst.ElementFactory.make("queue","queue4")
+	queue5  = Gst.ElementFactory.make("queue","queue5")
+	queue6  = Gst.ElementFactory.make("queue","queue6")
+	queue7  = Gst.ElementFactory.make("queue","queue7")
+	queue8  = Gst.ElementFactory.make("queue","queue8")
+	queue9  = Gst.ElementFactory.make("queue","queue9")
+	queue10 = Gst.ElementFactory.make("queue","queue10")
 
 	guint output_type = 2
 
-	if (isYAML)
-			output_type = ds_parse_group_type(argv[1], "output")
-	else
-			output_type = atoi(argv[2])
+	#if (isYAML)
+	#	output_type = ds_parse_group_type(argv[1], "output")
+	#else
+	#	output_type = atoi(argv[2])
+	if (isYAML):
+		output_type = ds_parse_group_type(argv[1], "output")
+	else:
+		output_type = arg_sink_mode
 
+#	if (output_type == 1)
+#		sink = gst_element_factory_make ("filesink", "nvvideo-renderer")
+#	else if (output_type == 2)
+#		sink = gst_element_factory_make ("fakesink", "fake-renderer")
+#	else if (output_type == 3) {
+##ifdef PLATFORM_TEGRA
+#		transform = gst_element_factory_make ("nvegltransform", "nvegltransform")
+#		if(!transform) {
+#			g_printerr ("nvegltransform element could not be created. Exiting.\n")
+#			return -1
+#		}
+##endif
+#		sink = gst_element_factory_make ("nveglglessink", "nvvideo-renderer")
+#	}
 	if (output_type == 1)
 		sink = gst_element_factory_make ("filesink", "nvvideo-renderer")
 	else if (output_type == 2)
@@ -799,6 +970,7 @@ main (int argc, char *argv[])
 		}
 	}
 
+"""
 	if (isYAML) {
 			nvds_parse_tracker(tracker, argv[1], "tracker")
 	} else {
@@ -809,6 +981,15 @@ main (int argc, char *argv[])
 			return -1
 		}
 	}
+"""
+	if (isYAML):
+			pyds.nvds_parse_tracker(tracker, argv[1], "tracker")
+	else:
+		config_file_name = "lpr_sample_tracker_config.txt"
+		if (not set_tracker_properties(tracker, config_file_name)):
+			print(f"Failed to set tracker1 properties. Exiting.\n")
+			return -1
+
 
 	caps =
 			gst_caps_new_simple ("video/x-raw", "format", G_TYPE_STRING, "I420", NULL)
@@ -933,4 +1114,7 @@ main (int argc, char *argv[])
 	g_source_remove (bus_watch_id)
 	g_main_loop_unref (loop)
 	return 0
-}
+
+
+if __name__ == '__main__':
+	sys.exit(main(sys.argv))
