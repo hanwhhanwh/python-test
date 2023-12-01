@@ -23,7 +23,8 @@ def main(args):
 		sys.stderr.write("usage: %s <media file or uri>\n" % args[0])
 		sys.exit(1)
 
-	GObject.threads_init()
+	# PyGIDeprecationWarning: Since version 3.11, calling threads_init is no longer needed. See: https://wiki.gnome.org/PyGObject/Threading
+	# GObject.threads_init()
 	Gst.init(None)
 		
 	playbin = Gst.ElementFactory.make("playbin", None)
@@ -39,7 +40,9 @@ def main(args):
 	playbin.set_property('uri', uri)
 
 	# create and event loop and feed gstreamer bus mesages to it
-	loop = GObject.MainLoop()
+	# PyGIDeprecationWarning: GObject.MainLoop is deprecated; use GLib.MainLoop instead
+	# loop = GObject.MainLoop()
+	loop = GLib.MainLoop()
 
 	bus = playbin.get_bus()
 	bus.add_signal_watch()
