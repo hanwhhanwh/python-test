@@ -5,7 +5,7 @@ import sys
 
 import gi
 gi.require_version('Gst', '1.0')
-from gi.repository import GObject, Gst
+from gi.repository import GLib, Gst
 
 def bus_call(bus, message, loop):
 	t = message.type
