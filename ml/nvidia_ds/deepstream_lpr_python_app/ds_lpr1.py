@@ -16,7 +16,7 @@ from ctypes import *
 import gi
 gi.require_version("Gst", "1.0")
 gi.require_version("GstRtspServer", "1.0")
-from gi.repository import Gst, GstRtspServer, GLib
+from gi.repository import GObject, Gst, GstRtspServer, GLib
 import configparser
 import datetime
 
@@ -60,6 +60,35 @@ pgie_classes_str = [ "Vehicle", "TwoWheeler", "Person",	"Roadsign" ]
 PRIMARY_DETECTOR_UID: Final							= 1
 SECONDARY_DETECTOR_UID: Final						= 2
 SECONDARY_CLASSIFIER_UID: Final						= 3
+
+
+
+def link_many(elements: list) -> bool:
+	""" Gst Element들을 앞에서부터 마지막까지 서로 연결합니다.
+
+	Args:
+		elements (list): 연결 (link)할 요소 목록
+
+	Returns:
+		bool: 연결 성공 여부
+	"""
+	prev_element = None
+	for element in elements:
+		if prev_element:
+			if not Gst.Element.link(prev_element, element):
+				return False
+		prev_element = element
+	return True
+
+
+def unlink_many(elements: list) -> bool:
+	last = None
+	for element in elements:
+		if last:
+			if not Gst.Element.unlink(last, element):
+				return False
+		last = element
+	return True
 
 
 #def get_absolute_file_path(cfg_file_path: str, file_path: str) -> str:
@@ -373,9 +402,34 @@ exit:
 	gst_object_unref (sink_pad)
 }
 """
+def cb_new_pad(element, pad, data):
 
+	#GstPad *sink_pad = gst_element_get_static_pad (data, "sink")
+	sink_pad = data.get_static_pad("sink")
+	if (sink_pad.is_linked()):
+		print("h264parser already linked. Ignoring.\n")
+		return
 
+	#new_pad_caps = gst_pad_get_current_caps (pad)
+	#new_pad_struct = gst_caps_get_structure (new_pad_caps, 0)
+	#new_pad_type = gst_structure_get_name (new_pad_struct)
+	#g_print("qtdemux pad %s\n",new_pad_type)
 
+	# check the new pad's type
+	new_pad_caps = pad.get_current_caps()
+	new_pad_struct = new_pad_caps.get_structure(0)
+	new_pad_type: str = new_pad_struct.get_name()
+	print(f"qtdemux pad {new_pad_type}\n")
+	
+	#if (g_str_has_prefix (new_pad_type, "video/x-h264")) {
+	if (new_pad_type.find("video/x-h264") >= 0):
+		ret = pad.link(sink_pad)
+		if (not ret == Gst.PadLinkReturn.OK):
+			print(f"fail to link parser and mp4 demux. {new_pad_type}\n")
+		else:
+			print(f"Link succeeded (type '{new_pad_type}')\n")
+	else:
+		print(f"{new_pad_type} output, not 264 stream\n")
 
 
 """
@@ -659,7 +713,7 @@ def main (argv) -> int:
 
 	# Standard GStreamer initialization
 	#gst_init (&argc, &argv)
-	GObject.threads_init()
+	#GObject.threads_init()
 	Gst.init(None)
 	#loop = g_main_loop_new (NULL, FALSE)
 	# create an event loop and feed gstreamer bus mesages to it
@@ -672,7 +726,7 @@ def main (argv) -> int:
 	# Create gstreamer elements
 	# Create Pipeline element that will form a connection of other elements
 	#pipeline = gst_pipeline_new ("pipeline") 
-	pipeline = Gst.Pipeline()
+	pipeline = Gst.Pipeline.new()
 	if not pipeline:
 		Gst.error(" Unable to create Pipeline")
 
@@ -696,16 +750,16 @@ def main (argv) -> int:
 	#			return -1
 	#		}
 	#}
+	g_list = list()
 	if(not isYAML):
 		src_cnt = 0
-		g_list = list()
 		for src_cnt in range (argc - 6):
-			g_list = g_list.append(argv[src_cnt + 5])
+			g_list.append(argv[src_cnt + 5])
 	else:
-		g_list = list()
 		#if (NVDS_YAML_PARSER_SUCCESS != nvds_parse_source_list(&g_list, argv[1], "source-list")) {
 		#	g_printerr ("No source is found. Exiting.\n")
 		#	return -1
+		pass
 	
 	# Multiple source files
 	#for (iterator = g_list, src_cnt=0 iterator iterator = iterator->next,src_cnt++) {
@@ -723,70 +777,80 @@ def main (argv) -> int:
 
 		#g_snprintf (ele_name, 64, "h264parser_%d", src_cnt)
 		#h264parser[src_cnt] = gst_element_factory_make ("h264parse", ele_name)
-		h264parser[src_cnt] = gst_element_factory_make ("h264parse", ele_name)
+		h264parser[src_cnt] = Gst.ElementFactory.make("h264parse", ele_name)
 			
 		#g_snprintf (ele_name, 64, "parsequeue_%d", src_cnt)
 		#parsequeue[src_cnt] = gst_element_factory_make ("queue", ele_name)
-		parsequeue[src_cnt] = gst_element_factory_make ("queue", ele_name)
+		parsequeue[src_cnt] = Gst.ElementFactory.make("queue", ele_name)
 
 		# Use nvdec_h264 for hardware accelerated decode on GPU
 		#g_snprintf (ele_name, 64, "decoder_%d", src_cnt)
 		#decoder[src_cnt] = gst_element_factory_make ("nvv4l2decoder", ele_name)
-		decoder[src_cnt] = gst_element_factory_make ("nvv4l2decoder", ele_name)
+		decoder[src_cnt] = Gst.ElementFactory.make("nvv4l2decoder", ele_name)
 			
 		#if(!source[src_cnt] || !h264parser[src_cnt] || !decoder[src_cnt] ||
 		#		!mp4demux[src_cnt]) {
 		#	g_printerr ("One element could not be created. Exiting.\n")
 		#	return -1
 		#}
-		if (!source[src_cnt] || !h264parser[src_cnt] || !decoder[src_cnt] || !mp4demux[src_cnt]):
-			g_printerr ("One element could not be created. Exiting.\n")
+		if ( (not source[source_index]) or (not h264parser[source_index]) or (not decoder[source_index]) or (not mp4demux[source_index]) ):
+			print("One element could not be created. Exiting.\n")
 			return -1
 			
-		gst_bin_add_many (GST_BIN (pipeline), source[src_cnt], mp4demux[src_cnt],
-				h264parser[src_cnt], parsequeue[src_cnt], decoder[src_cnt], NULL)
+		#gst_bin_add_many (GST_BIN (pipeline), source[src_cnt], mp4demux[src_cnt],
+		#		h264parser[src_cnt], parsequeue[src_cnt], decoder[src_cnt], NULL)
+		pipeline.add(source[source_index], mp4demux[source_index],
+				h264parser[source_index], parsequeue[source_index], decoder[source_index])
 			
-		g_snprintf (pad_name_sink, 64, "sink_%d", src_cnt)
-		sinkpad = gst_element_get_request_pad (streammux, pad_name_sink)
-		g_print("Request %s pad from streammux\n",pad_name_sink)
-		if (!sinkpad) {
-			g_printerr ("Streammux request sink pad failed. Exiting.\n")
+		#g_snprintf (pad_name_sink, 64, "sink_%d", src_cnt)
+		#sinkpad = gst_element_get_request_pad (streammux, pad_name_sink)
+		sinkpad = Gst.ElementFactory.make(streammux, f"sink_{source_index}")
+		print("Request sink_{source_index} pad from streammux\n")
+		if (not sinkpad):
+			print("Streammux request sink pad failed. Exiting.\n")
 			return -1
-		}
 
-		srcpad = gst_element_get_static_pad (decoder[src_cnt], pad_name_src)
-		if (!srcpad) {
-			g_printerr ("Decoder request src pad failed. Exiting.\n")
+		#srcpad = gst_element_get_static_pad (decoder[src_cnt], pad_name_src)
+		srcpad = decoder[source_index].get_static_pad("src")
+		if (not srcpad):
+			print("Decoder request src pad failed. Exiting.\n")
 			return -1
-		}
 
-		if (gst_pad_link (srcpad, sinkpad) != GST_PAD_LINK_OK) {
-			g_printerr ("Failed to link decoder to stream muxer. Exiting.\n")
+		#if (gst_pad_link (srcpad, sinkpad) != GST_PAD_LINK_OK) {
+		#	g_printerr ("Failed to link decoder to stream muxer. Exiting.\n")
+		#	return -1
+		#}
+		srcpad.link(sinkpad)
+
+		#if(!gst_element_link_pads (source[src_cnt], "src", mp4demux[src_cnt],
+		#			"sink")) {
+		#	g_printerr ("Elements could not be linked: 0. Exiting.\n")
+		#	return -1
+		#}
+		if(not source[source_index].link_pads("src", mp4demux[source_index], "sink")):
+			print("Elements could not be linked: 0. Exiting.\n")
 			return -1
-		}
 
-		if(!gst_element_link_pads (source[src_cnt], "src", mp4demux[src_cnt],
-					"sink")) {
-			g_printerr ("Elements could not be linked: 0. Exiting.\n")
+		#g_signal_connect (mp4demux[src_cnt], "pad-added", G_CALLBACK (cb_new_pad), h264parser[src_cnt])
+		mp4demux[source_index].connect("pad-added", cb_new_pad, h264parser[source_index])
+
+		#if (!gst_element_link_many (h264parser[src_cnt], parsequeue[src_cnt],
+		#			decoder[src_cnt], NULL)) {
+		#	g_printerr ("Elements could not be linked: 1. Exiting.\n")
+		#}
+		if (not link_many([h264parser[source_index], parsequeue[source_index], decoder[source_index]])):
+			print("Elements could not be linked: 1. Exiting.\n")
 			return -1
-		}
 
-		g_signal_connect (mp4demux[src_cnt], "pad-added", G_CALLBACK (cb_new_pad),
-					h264parser[src_cnt])
+		# we set the input filename to the source element
+		#g_object_set (G_OBJECT (source[src_cnt]), "location",
+		#		(gchar *)iterator->data, NULL)
+		source[source_index].set_property("location", g_list[source_index])
 
-		if (!gst_element_link_many (h264parser[src_cnt], parsequeue[src_cnt],
-					decoder[src_cnt], NULL)) {
-			g_printerr ("Elements could not be linked: 1. Exiting.\n")
-		}
-
-		/* we set the input filename to the source element */
-		g_object_set (G_OBJECT (source[src_cnt]), "location",
-				(gchar *)iterator->data, NULL)
-
-		gst_object_unref (sinkpad)
-		gst_object_unref (srcpad)
-	}
-	g_list_free(g_list)
+	#	gst_object_unref (sinkpad)
+	#	gst_object_unref (srcpad)
+	#}
+	#g_list_free(g_list)
 
 	# Create three nvinfer instances for two detectors and one classifier
 	#primary_detector = gst_element_factory_make (infer_plugin, "primary-infer-engine1")
@@ -812,17 +876,17 @@ def main (argv) -> int:
 	#	else
 	#		isH264 = false
 	#}
-	if (isYAML):
-		if (!ds_parse_enc_type(argv[1], "output")):
-			isH264 = True
-		else:
-			isH264 = False
+	#if (isYAML):
+	#	if (!ds_parse_enc_type(argv[1], "output")):
+	#		isH264 = True
+	#	else:
+	#		isH264 = False
 
 	#if (isH264)
 	#	nvh264enc = gst_element_factory_make ("nvv4l2h264enc" ,"nvvideo-h264enc")
 	#else:
 	#	nvh264enc = gst_element_factory_make ("nvv4l2h265enc" ,"nvvideo-h265enc")
-	if (isH264)
+	if (isH264):
 		nvh264enc = Gst.ElementFactory.make("nvv4l2h264enc" ,"nvvideo-h264enc")
 	else:
 		nvh264enc = Gst.ElementFactory.make("nvv4l2h265enc" ,"nvvideo-h265enc")
@@ -848,25 +912,25 @@ def main (argv) -> int:
 	#queue8 = gst_element_factory_make ("queue", "queue8")
 	#queue9 = gst_element_factory_make ("queue", "queue9")
 	#queue10 = gst_element_factory_make ("queue", "queue10")
-	queue1  = Gst.ElementFactory.make("queue","queue1")
-	queue2  = Gst.ElementFactory.make("queue","queue2")
-	queue3  = Gst.ElementFactory.make("queue","queue3")
-	queue4  = Gst.ElementFactory.make("queue","queue4")
-	queue5  = Gst.ElementFactory.make("queue","queue5")
-	queue6  = Gst.ElementFactory.make("queue","queue6")
-	queue7  = Gst.ElementFactory.make("queue","queue7")
-	queue8  = Gst.ElementFactory.make("queue","queue8")
-	queue9  = Gst.ElementFactory.make("queue","queue9")
-	queue10 = Gst.ElementFactory.make("queue","queue10")
+	queue1  = Gst.ElementFactory.make("queue", "queue1")
+	queue2  = Gst.ElementFactory.make("queue", "queue2")
+	queue3  = Gst.ElementFactory.make("queue", "queue3")
+	queue4  = Gst.ElementFactory.make("queue", "queue4")
+	queue5  = Gst.ElementFactory.make("queue", "queue5")
+	queue6  = Gst.ElementFactory.make("queue", "queue6")
+	queue7  = Gst.ElementFactory.make("queue", "queue7")
+	queue8  = Gst.ElementFactory.make("queue", "queue8")
+	queue9  = Gst.ElementFactory.make("queue", "queue9")
+	queue10 = Gst.ElementFactory.make("queue", "queue10")
 
-	guint output_type = 2
+	output_type = 2
 
 	#if (isYAML)
 	#	output_type = ds_parse_group_type(argv[1], "output")
 	#else
 	#	output_type = atoi(argv[2])
 	if (isYAML):
-		output_type = ds_parse_group_type(argv[1], "output")
+		output_type = output_type # ds_parse_group_type(argv[1], "output")
 	else:
 		output_type = arg_sink_mode
 
@@ -884,93 +948,162 @@ def main (argv) -> int:
 ##endif
 #		sink = gst_element_factory_make ("nveglglessink", "nvvideo-renderer")
 #	}
-	if (output_type == 1)
-		sink = gst_element_factory_make ("filesink", "nvvideo-renderer")
-	else if (output_type == 2)
-		sink = gst_element_factory_make ("fakesink", "fake-renderer")
-	else if (output_type == 3) {
-#ifdef PLATFORM_TEGRA
-		transform = gst_element_factory_make ("nvegltransform", "nvegltransform")
-		if(!transform) {
-			g_printerr ("nvegltransform element could not be created. Exiting.\n")
-			return -1
-		}
-#endif
-		sink = gst_element_factory_make ("nveglglessink", "nvvideo-renderer")
-	}
+	if (output_type == 1):
+		sink = Gst.ElementFactory.make("filesink", "nvvideo-renderer")
+	elif (output_type == 2):
+		sink = Gst.ElementFactory.make("fakesink", "fake-renderer")
+	elif (output_type == 3):
+		if (is_aarch64()):
+			transform = Gst.ElementFactory.make("nvegltransform", "nvegltransform")
+			if(not transform):
+				print("nvegltransform element could not be created. Exiting.\n")
+				return -1
+		sink = Gst.ElementFactory.make("nveglglessink", "nvvideo-renderer")
 
-	if (!primary_detector || !secondary_detector || !nvvidconv
-			|| !nvosd || !sink  || !capfilt || !nvh264enc) {
-		g_printerr ("One element could not be created. Exiting.\n")
+	if (not primary_detector or not secondary_detector or not nvvidconv
+			or not nvosd or not sink  or not capfilt or not nvh264enc):
+		print("One element could not be created. Exiting.\n")
 		return -1
-	}
 
-	g_object_set (G_OBJECT (streammux), "width", MUXER_OUTPUT_WIDTH, "height",
-			MUXER_OUTPUT_HEIGHT, "batch-size", src_cnt,
-			"batched-push-timeout", MUXER_BATCH_TIMEOUT_USEC, NULL)
+	#g_object_set (G_OBJECT (streammux), "width", MUXER_OUTPUT_WIDTH, "height",
+	#		MUXER_OUTPUT_HEIGHT, "batch-size", src_cnt,
+	#		"batched-push-timeout", MUXER_BATCH_TIMEOUT_USEC, NULL)
+	streammux.set_property("width", MUXER_OUTPUT_WIDTH)
+	streammux.set_property("height", MUXER_OUTPUT_HEIGHT)
+	streammux.set_property("batch-size", src_cnt)
+	streammux.set_property("batched-push-timeout", MUXER_BATCH_TIMEOUT_USEC)
 
-	tiler_rows = (guint) sqrt (src_cnt)
-	tiler_columns = (guint) ceil (1.0 * src_cnt / tiler_rows)
-	g_object_set (G_OBJECT (nvtile), "rows", tiler_rows, "columns",
-			tiler_columns, "width", 1280, "height", 720, NULL)
+	#tiler_rows = (guint) sqrt (src_cnt)
+	#tiler_columns = (guint) ceil (1.0 * src_cnt / tiler_rows)
+	#g_object_set (G_OBJECT (nvtile), "rows", tiler_rows, "columns",
+	#		tiler_columns, "width", 1280, "height", 720, NULL)
 
-	g_object_set (G_OBJECT (nvdsanalytics), "config-file",
-			"config_nvdsanalytics.txt", NULL)
+	#g_object_set (G_OBJECT (nvdsanalytics), "config-file",
+	#		"config_nvdsanalytics.txt", NULL)
+	tiler_rows = int(math.sqrt(src_cnt))
+	tiler_columns = int(math.ceil((1.0 * src_cnt) / tiler_rows))
+	nvtile.set_property("rows",tiler_rows)
+	nvtile.set_property("columns",tiler_columns)
+	nvtile.set_property("width", 1280)
+	nvtile.set_property("height", 720)
+	nvdsanalytics.set_property("config-file", "config_nvdsanalytics.txt")
 
-	/* Set the config files for the two detectors and one classifier. The PGIE
+	""" Set the config files for the two detectors and one classifier. The PGIE
 	 * detects the cars. The first SGIE detects car plates from the cars and the
 	 * second SGIE classifies the caracters in the car plate to identify the car
-	 * plate string. */
-	if (isYAML) {
-		if(!use_nvinfer_server){
-				nvds_parse_gie (primary_detector, argv[1], "primary-gie")
-				nvds_parse_gie (secondary_detector, argv[1], "secondary-gie-0")
-				nvds_parse_gie (secondary_classifier, argv[1], "secondary-gie-1")
-		} else {
-				car_mode = ds_parse_group_car_mode(argv[1], "triton")
-				get_triton_yml(car_mode, use_triton_grpc, pgie_cfg_file_path, lpd_cfg_file_path, lpr_cfg_file_path, 256)
-				g_object_set (G_OBJECT (primary_detector), "config-file-path", pgie_cfg_file_path, "unique-id",
-					PRIMARY_DETECTOR_UID, "batch-size", 1, NULL)
-				g_object_set (G_OBJECT (secondary_detector), "config-file-path", lpd_cfg_file_path, "unique-id",
-					SECONDARY_DETECTOR_UID, "process-mode", 2, NULL)
-				g_object_set (G_OBJECT (secondary_classifier), "config-file-path", lpr_cfg_file_path, "unique-id",
-					SECONDARY_CLASSIFIER_UID, "process-mode", 2, NULL)
-		}
-	} else {
-		if(!use_nvinfer_server){
-				g_object_set (G_OBJECT (primary_detector), "config-file-path",
-					"trafficamnet_config.txt",
-					"unique-id", PRIMARY_DETECTOR_UID, NULL)
+	 * plate string. """
+	#if (isYAML) {
+	#	if(!use_nvinfer_server){
+	#			nvds_parse_gie (primary_detector, argv[1], "primary-gie")
+	#			nvds_parse_gie (secondary_detector, argv[1], "secondary-gie-0")
+	#			nvds_parse_gie (secondary_classifier, argv[1], "secondary-gie-1")
+	#	} else {
+	#			car_mode = ds_parse_group_car_mode(argv[1], "triton")
+	#			get_triton_yml(car_mode, use_triton_grpc, pgie_cfg_file_path, lpd_cfg_file_path, lpr_cfg_file_path, 256)
+	#			g_object_set (G_OBJECT (primary_detector), "config-file-path", pgie_cfg_file_path, "unique-id",
+	#				PRIMARY_DETECTOR_UID, "batch-size", 1, NULL)
+	#			g_object_set (G_OBJECT (secondary_detector), "config-file-path", lpd_cfg_file_path, "unique-id",
+	#				SECONDARY_DETECTOR_UID, "process-mode", 2, NULL)
+	#			g_object_set (G_OBJECT (secondary_classifier), "config-file-path", lpr_cfg_file_path, "unique-id",
+	#				SECONDARY_CLASSIFIER_UID, "process-mode", 2, NULL)
+	#	}
+	#} else {
+	#	if(!use_nvinfer_server){
+	#			g_object_set (G_OBJECT (primary_detector), "config-file-path",
+	#				"trafficamnet_config.txt",
+	#				"unique-id", PRIMARY_DETECTOR_UID, NULL)
 
-				if (atoi(argv[1]) == 1) {
-					g_object_set (G_OBJECT (secondary_detector), "config-file-path",
-						NVINFER_LDP_US_CFG, "unique-id",
-						SECONDARY_DETECTOR_UID, "process-mode", 2, NULL)
-					g_object_set (G_OBJECT (secondary_classifier), "config-file-path",
-						"lpr_config_sgie_us.txt", "unique-id", SECONDARY_CLASSIFIER_UID,
-						"process-mode", 2, NULL)
-				} else if (atoi(argv[1]) == 2) {
-					g_object_set (G_OBJECT (secondary_detector), "config-file-path",
-						NVINFER_LPD_CH_CFG, "unique-id",
-						SECONDARY_DETECTOR_UID, "process-mode", 2, NULL)
-					g_object_set (G_OBJECT (secondary_classifier), "config-file-path",
-						"lpr_config_sgie_ch.txt", "unique-id", SECONDARY_CLASSIFIER_UID,
-						"process-mode", 2, NULL)
-				}
-		} else{
-				car_mode = atoi(argv[1])
-				get_triton_yml(car_mode, use_triton_grpc, pgie_cfg_file_path, lpd_cfg_file_path, lpr_cfg_file_path, 256)
-				g_object_set (G_OBJECT (primary_detector), "config-file-path", pgie_cfg_file_path,
-							"unique-id", PRIMARY_DETECTOR_UID,"batch-size", 1, NULL)
-					g_object_set (G_OBJECT (secondary_detector), "config-file-path",
-							lpd_cfg_file_path, "unique-id",
-							SECONDARY_DETECTOR_UID, NULL)
-					g_object_set (G_OBJECT (secondary_classifier), "config-file-path",
-							lpr_cfg_file_path, "unique-id", SECONDARY_CLASSIFIER_UID, NULL)
-		}
-	}
+	#			if (atoi(argv[1]) == 1) {
+	#				g_object_set (G_OBJECT (secondary_detector), "config-file-path",
+	#					NVINFER_LDP_US_CFG, "unique-id",
+	#					SECONDARY_DETECTOR_UID, "process-mode", 2, NULL)
+	#				g_object_set (G_OBJECT (secondary_classifier), "config-file-path",
+	#					"lpr_config_sgie_us.txt", "unique-id", SECONDARY_CLASSIFIER_UID,
+	#					"process-mode", 2, NULL)
+	#			} else if (atoi(argv[1]) == 2) {
+	#				g_object_set (G_OBJECT (secondary_detector), "config-file-path",
+	#					NVINFER_LPD_CH_CFG, "unique-id",
+	#					SECONDARY_DETECTOR_UID, "process-mode", 2, NULL)
+	#				g_object_set (G_OBJECT (secondary_classifier), "config-file-path",
+	#					"lpr_config_sgie_ch.txt", "unique-id", SECONDARY_CLASSIFIER_UID,
+	#					"process-mode", 2, NULL)
+	#			}
+	#	} else{
+	#			car_mode = atoi(argv[1])
+	#			get_triton_yml(car_mode, use_triton_grpc, pgie_cfg_file_path, lpd_cfg_file_path, lpr_cfg_file_path, 256)
+	#			g_object_set (G_OBJECT (primary_detector), "config-file-path", pgie_cfg_file_path,
+	#						"unique-id", PRIMARY_DETECTOR_UID,"batch-size", 1, NULL)
+	#				g_object_set (G_OBJECT (secondary_detector), "config-file-path",
+	#						lpd_cfg_file_path, "unique-id",
+	#						SECONDARY_DETECTOR_UID, NULL)
+	#				g_object_set (G_OBJECT (secondary_classifier), "config-file-path",
+	#						lpr_cfg_file_path, "unique-id", SECONDARY_CLASSIFIER_UID, NULL)
+	#	}
+	#}
+	if (isYAML):
+		#if(!use_nvinfer_server){
+		#		nvds_parse_gie (primary_detector, argv[1], "primary-gie")
+		#		nvds_parse_gie (secondary_detector, argv[1], "secondary-gie-0")
+		#		nvds_parse_gie (secondary_classifier, argv[1], "secondary-gie-1")
+		#} else {
+		#		car_mode = ds_parse_group_car_mode(argv[1], "triton")
+		#		get_triton_yml(car_mode, use_triton_grpc, pgie_cfg_file_path, lpd_cfg_file_path, lpr_cfg_file_path, 256)
+		#		g_object_set (G_OBJECT (primary_detector), "config-file-path", pgie_cfg_file_path, "unique-id",
+		#			PRIMARY_DETECTOR_UID, "batch-size", 1, NULL)
+		#		g_object_set (G_OBJECT (secondary_detector), "config-file-path", lpd_cfg_file_path, "unique-id",
+		#			SECONDARY_DETECTOR_UID, "process-mode", 2, NULL)
+		#		g_object_set (G_OBJECT (secondary_classifier), "config-file-path", lpr_cfg_file_path, "unique-id",
+		#			SECONDARY_CLASSIFIER_UID, "process-mode", 2, NULL)
+		pass
+	else:
+		#if(not use_nvinfer_server):
+		#	g_object_set (G_OBJECT (primary_detector), "config-file-path",
+		#		"trafficamnet_config.txt",
+		#		"unique-id", PRIMARY_DETECTOR_UID, NULL)
 
-"""
+		#	if (atoi(argv[1]) == 1) {
+		#		g_object_set (G_OBJECT (secondary_detector), "config-file-path",
+		#			NVINFER_LDP_US_CFG, "unique-id",
+		#			SECONDARY_DETECTOR_UID, "process-mode", 2, NULL)
+		#		g_object_set (G_OBJECT (secondary_classifier), "config-file-path",
+		#			"lpr_config_sgie_us.txt", "unique-id", SECONDARY_CLASSIFIER_UID,
+		#			"process-mode", 2, NULL)
+		#	} else if (atoi(argv[1]) == 2) {
+		#		g_object_set (G_OBJECT (secondary_detector), "config-file-path",
+		#			NVINFER_LPD_CH_CFG, "unique-id",
+		#			SECONDARY_DETECTOR_UID, "process-mode", 2, NULL)
+		#		g_object_set (G_OBJECT (secondary_classifier), "config-file-path",
+		#			"lpr_config_sgie_ch.txt", "unique-id", SECONDARY_CLASSIFIER_UID,
+		#			"process-mode", 2, NULL)
+		if(not use_nvinfer_server):
+			primary_detector.set_property("config-file-path", "trafficamnet_config.txt")
+			primary_detector.set_property("unique-id", PRIMARY_DETECTOR_UID)
+
+			secondary_detector.set_property("unique-id", SECONDARY_DETECTOR_UID)
+			secondary_detector.set_property("process-mode", 2)
+
+			secondary_classifier.set_property("unique-id", SECONDARY_CLASSIFIER_UID)
+			secondary_classifier.set_property("process-mode", 2)
+			if (arg_lang_mode == 1):
+				secondary_detector.set_property("config-file-path", NVINFER_LDP_US_CFG)
+				secondary_classifier.set_property("config-file-path", "lpr_config_sgie_us.txt")
+			elif (arg_lang_mode == 2):
+				secondary_detector.set_property("config-file-path", NVINFER_LPD_CH_CFG)
+				secondary_classifier.set_property("config-file-path", "lpr_config_sgie_us.txt")
+		else:
+			#car_mode = arg_sink_mode
+			#get_triton_yml(car_mode, use_triton_grpc, pgie_cfg_file_path, lpd_cfg_file_path, lpr_cfg_file_path, 256)
+			#g_object_set (G_OBJECT (primary_detector), "config-file-path", pgie_cfg_file_path,
+			#			"unique-id", PRIMARY_DETECTOR_UID,"batch-size", 1, NULL)
+			#	g_object_set (G_OBJECT (secondary_detector), "config-file-path",
+			#			lpd_cfg_file_path, "unique-id",
+			#			SECONDARY_DETECTOR_UID, NULL)
+			#	g_object_set (G_OBJECT (secondary_classifier), "config-file-path",
+			#			lpr_cfg_file_path, "unique-id", SECONDARY_CLASSIFIER_UID, NULL)
+			pass
+
+
+	"""
 	if (isYAML) {
 			nvds_parse_tracker(tracker, argv[1], "tracker")
 	} else {
@@ -981,7 +1114,7 @@ def main (argv) -> int:
 			return -1
 		}
 	}
-"""
+	"""
 	if (isYAML):
 			pyds.nvds_parse_tracker(tracker, argv[1], "tracker")
 	else:
@@ -991,130 +1124,215 @@ def main (argv) -> int:
 			return -1
 
 
-	caps =
-			gst_caps_new_simple ("video/x-raw", "format", G_TYPE_STRING, "I420", NULL)
-	feature = gst_caps_features_new ("memory:NVMM", NULL)
-	gst_caps_set_features (caps, 0, feature)
-	g_object_set (G_OBJECT (capfilt), "caps", caps, NULL)
+	#caps = gst_caps_new_simple ("video/x-raw", "format", G_TYPE_STRING, "I420", NULL)
+	#feature = gst_caps_features_new ("memory:NVMM", NULL)
+	#gst_caps_set_features (caps, 0, feature)
+	caps = Gst.Caps.from_string("video/x-raw(memory:NVMM), format=RGBA")
+	#g_object_set (G_OBJECT (capfilt), "caps", caps, NULL)
+	capfilt.set_property("caps", caps)
 
-	/* we add a bus message handler */
-	bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline))
-	bus_watch_id = gst_bus_add_watch (bus, bus_call, loop)
-	gst_object_unref (bus)
+	# we add a bus message handler
+	#bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline))
+	bus = pipeline.get_bus()
+	#bus_watch_id = gst_bus_add_watch (bus, bus_call, loop)
+	#gst_object_unref (bus)
+	bus.add_signal_watch()
+	bus.connect("message", bus_call, loop)
 
-	/* Set up the pipeline */
-	/* we add all elements into the pipeline */
-	gst_bin_add_many (GST_BIN (pipeline), primary_detector, secondary_detector,
+	# Set up the pipeline
+	# we add all elements into the pipeline
+	#gst_bin_add_many (GST_BIN (pipeline), primary_detector, secondary_detector,
+	#		tracker, nvdsanalytics, queue1, queue2, queue3, queue4, queue5, queue6,
+	#		queue7, queue8, secondary_classifier, nvvidconv, nvosd, nvtile, sink,
+	#		NULL)
+	pipeline.add( primary_detector, secondary_detector,
 			tracker, nvdsanalytics, queue1, queue2, queue3, queue4, queue5, queue6,
-			queue7, queue8, secondary_classifier, nvvidconv, nvosd, nvtile, sink,
-			NULL)
-	if (isYAML) {
-			g_print("set analy config\n")
-			if (!ds_parse_file_name(argv[1], "analytics-config"))
-					g_object_set (G_OBJECT (nvdsanalytics), "enable", FALSE, NULL)
-	} else {
-		if (atoi(argv[3]) == 0) {
-			g_object_set (G_OBJECT (nvdsanalytics), "enable", FALSE, NULL)
-		} else {
-			g_object_set (G_OBJECT (nvdsanalytics), "enable", TRUE, NULL)
-		}
-	}
-	if (!gst_element_link_many (streammux, queue1, primary_detector, queue2,
+			queue7, queue8, secondary_classifier, nvvidconv, nvosd, nvtile, sink )
+	#if (isYAML) {
+	#		g_print("set analy config\n")
+	#		if (!ds_parse_file_name(argv[1], "analytics-config"))
+	#				g_object_set (G_OBJECT (nvdsanalytics), "enable", FALSE, NULL)
+	#} else {
+	#	if (atoi(argv[3]) == 0) {
+	#		g_object_set (G_OBJECT (nvdsanalytics), "enable", FALSE, NULL)
+	#	} else {
+	#		g_object_set (G_OBJECT (nvdsanalytics), "enable", TRUE, NULL)
+	#	}
+	#}
+	if (isYAML):
+			print("set analy config\n")
+			#if (!ds_parse_file_name(argv[1], "analytics-config"))
+			#		g_object_set (G_OBJECT (nvdsanalytics), "enable", FALSE, NULL)
+	else:
+		#if (atoi(argv[3]) == 0) {
+		#	g_object_set (G_OBJECT (nvdsanalytics), "enable", FALSE, NULL)
+		#} else {
+		#	g_object_set (G_OBJECT (nvdsanalytics), "enable", TRUE, NULL)
+		#}
+		if (arg_is_roi == 0):
+			nvdsanalytics.set_property("enable", False)
+		else:
+			nvdsanalytics.set_property("enable", True)
+
+	#if (!gst_element_link_many (streammux, queue1, primary_detector, queue2,
+	#		tracker, queue3, nvdsanalytics, queue4, secondary_detector, queue5,
+	#		secondary_classifier, queue6, nvtile, queue7, nvvidconv, queue8,
+	#		nvosd, NULL)) {
+	#		g_printerr ("Inferring and tracking elements link failure.\n")
+	#		return -1
+	#}
+	if (not link_many (streammux, queue1, primary_detector, queue2,
 			tracker, queue3, nvdsanalytics, queue4, secondary_detector, queue5,
 			secondary_classifier, queue6, nvtile, queue7, nvvidconv, queue8,
-			nvosd, NULL)) {
-			g_printerr ("Inferring and tracking elements link failure.\n")
+			nvosd)):
+		print (f"Inferring and tracking elements link failure.\n")
+		return -1
+
+
+#	if (output_type == 1) {
+#		gchar *filepath = NULL
+#		if (isYAML) {
+#				GString * output_file =
+#				  ds_parse_file_name(argv[1], "output")
+#				if (isH264)
+#				    filepath = g_strconcat(output_file->str,".264",NULL)
+#				else
+#				    filepath = g_strconcat(output_file->str,".265",NULL)
+#				ds_parse_enc_config(nvh264enc, argv[1], "output")
+#		} else {
+#				filepath = g_strconcat(argv[argc-1],".264",NULL)
+#		}
+#		if(use_nvinfer_server){
+#				g_object_set (G_OBJECT (sink), "async", FALSE, NULL)
+#				g_object_set (G_OBJECT (sink), "sync", TRUE, NULL)
+#		}
+#		g_object_set (G_OBJECT (sink), "location", filepath, NULL)
+#		gst_bin_add_many (GST_BIN (pipeline), nvvidconv1, nvh264enc, capfilt, 
+#				queue9, queue10, NULL)
+
+#		if (!gst_element_link_many (nvosd, queue9, nvvidconv1, capfilt, queue10,
+#				   nvh264enc, sink, NULL)) {
+#			g_printerr ("OSD and sink elements link failure.\n")
+#			return -1
+#		}
+#	} else if (output_type == 2) {
+#		g_object_set (G_OBJECT (sink), "sync", 0, "async", false,NULL)
+#		if (!gst_element_link (nvosd, sink)) {
+#			g_printerr ("OSD and sink elements link failure.\n")
+#			return -1
+#		}
+#	} else if (output_type == 3) {
+##ifdef PLATFORM_TEGRA
+#		gst_bin_add_many (GST_BIN (pipeline), transform, queue9, NULL)
+#		if (!gst_element_link_many (nvosd, queue9, transform, sink, NULL)) {
+#			g_printerr ("OSD and sink elements link failure.\n")
+#			return -1
+#		}
+##else
+#		gst_bin_add (GST_BIN (pipeline), queue9)
+#		if (!gst_element_link_many (nvosd, queue9, sink, NULL)) {
+#			g_printerr ("OSD and sink elements link failure.\n")
+#			return -1
+#		}
+##endif
+#	}
+	if (output_type == 1):
+		filepath = ''
+		if (isYAML):
+			#output_file = ds_parse_file_name(argv[1], "output")
+			#if (isH264):
+			#	filepath = (output_file->str + ".264")
+			#else:
+			#	filepath = (output_file->str + ".265")
+			#ds_parse_enc_config(nvh264enc, argv[1], "output")
+			pass
+		else:
+			filepath = (argv[argc - 1] + ".264")
+
+		if(use_nvinfer_server):
+			sink.set_property("async", False)
+			sink.set_property("sync", True)
+		sink.set_property("location", filepath)
+		pipeline.add(nvvidconv1, nvh264enc, capfilt, queue9, queue10)
+
+		if (not link_many (nvosd, queue9, nvvidconv1, capfilt, queue10, nvh264enc, sink)):
+			print("OSD and sink elements link failure.\n")
 			return -1
-	}
-
-	if (output_type == 1) {
-		gchar *filepath = NULL
-		if (isYAML) {
-				GString * output_file =
-				  ds_parse_file_name(argv[1], "output")
-				if (isH264)
-				    filepath = g_strconcat(output_file->str,".264",NULL)
-				else
-				    filepath = g_strconcat(output_file->str,".265",NULL)
-				ds_parse_enc_config(nvh264enc, argv[1], "output")
-		} else {
-				filepath = g_strconcat(argv[argc-1],".264",NULL)
-		}
-		if(use_nvinfer_server){
-				g_object_set (G_OBJECT (sink), "async", FALSE, NULL)
-				g_object_set (G_OBJECT (sink), "sync", TRUE, NULL)
-		}
-		g_object_set (G_OBJECT (sink), "location", filepath, NULL)
-		gst_bin_add_many (GST_BIN (pipeline), nvvidconv1, nvh264enc, capfilt, 
-				queue9, queue10, NULL)
-
-		if (!gst_element_link_many (nvosd, queue9, nvvidconv1, capfilt, queue10,
-				   nvh264enc, sink, NULL)) {
-			g_printerr ("OSD and sink elements link failure.\n")
+	elif (output_type == 2):
+		sink.set_property("sync", 0)
+		sink.set_property("async", False)
+		if (not nvosd.link(sink)):
+			print("OSD and sink elements link failure.\n")
 			return -1
-		}
-	} else if (output_type == 2) {
-		g_object_set (G_OBJECT (sink), "sync", 0, "async", false,NULL)
-		if (!gst_element_link (nvosd, sink)) {
-			g_printerr ("OSD and sink elements link failure.\n")
-			return -1
-		}
-	} else if (output_type == 3) {
-#ifdef PLATFORM_TEGRA
-		gst_bin_add_many (GST_BIN (pipeline), transform, queue9, NULL)
-		if (!gst_element_link_many (nvosd, queue9, transform, sink, NULL)) {
-			g_printerr ("OSD and sink elements link failure.\n")
-			return -1
-		}
-#else
-		gst_bin_add (GST_BIN (pipeline), queue9)
-		if (!gst_element_link_many (nvosd, queue9, sink, NULL)) {
-			g_printerr ("OSD and sink elements link failure.\n")
-			return -1
-		}
-#endif
-	}
+	elif (output_type == 3):
+		if (is_aarch64()):
+			pipeline.add(transform, queue9)
+			if (not link_many(nvosd, queue9, transform, sink)):
+				print("OSD and sink elements link failure.\n")
+				return -1
+		else:
+			pipeline.add(queue9)
+			if (not link_many (nvosd, queue9, sink)):
+				print("OSD and sink elements link failure.\n")
+				return -1
 
-	/* Lets add probe to get informed of the meta data generated, we add probe to
-	 * the sink pad of the osd element, since by that time, the buffer would have
-	 * had got all the metadata. */
-	osd_sink_pad = gst_element_get_static_pad (nvosd, "sink")
-	if (!osd_sink_pad)
-		g_print ("Unable to get sink pad\n")
-	else
-		gst_pad_add_probe (osd_sink_pad, GST_PAD_PROBE_TYPE_BUFFER,
-				osd_sink_pad_buffer_probe, &perf_measure, NULL)
-	gst_object_unref (osd_sink_pad)
+	# Lets add probe to get informed of the meta data generated, we add probe to
+	# the sink pad of the osd element, since by that time, the buffer would have
+	# had got all the metadata.
+	#osd_sink_pad = gst_element_get_static_pad (nvosd, "sink")
+	#if (!osd_sink_pad)
+	#	g_print ("Unable to get sink pad\n")
+	#else
+	#	gst_pad_add_probe (osd_sink_pad, GST_PAD_PROBE_TYPE_BUFFER,
+	#			osd_sink_pad_buffer_probe, &perf_measure, NULL)
+	#gst_object_unref (osd_sink_pad)
+	osd_sink_pad = nvosd.get_static_pad ("sink")
+	if (not osd_sink_pad):
+		print ("Unable to get sink pad\n")
+	else:
+		osd_sink_pad.add_probe(Gst.PadProbeType.BUFFER, osd_sink_pad_buffer_probe, 0)
 
-	osd_sink_pad = gst_element_get_static_pad (nvdsanalytics, "src")
-	if (!osd_sink_pad)
-		g_print ("Unable to get src pad\n")
-	else
-		gst_pad_add_probe (osd_sink_pad, GST_PAD_PROBE_TYPE_BUFFER,
-				nvdsanalytics_src_pad_buffer_probe, NULL, NULL)
-	gst_object_unref (osd_sink_pad)
+	#osd_sink_pad = gst_element_get_static_pad (nvdsanalytics, "src")
+	#if (!osd_sink_pad)
+	#	g_print ("Unable to get src pad\n")
+	#else
+	#	gst_pad_add_probe (osd_sink_pad, GST_PAD_PROBE_TYPE_BUFFER,
+	#			nvdsanalytics_src_pad_buffer_probe, NULL, NULL)
+	#gst_object_unref (osd_sink_pad)
+	osd_sink_pad = nvdsanalytics.get_static_pad("src")
+	if (not osd_sink_pad):
+		print("Unable to get src pad\n")
+	else:
+		osd_sink_pad.add_probe(Gst.PadProbeType.BUFFER, nvdsanalytics_src_pad_buffer_probe, 0)
 
-	/* Set the pipeline to "playing" state */
-	g_print ("Now playing: %s\n", argv[1])
-	gst_element_set_state (pipeline, GST_STATE_PLAYING)
+	# Set the pipeline to "playing" state
+	print (f"Now playing: {argv[1]=}\n")
+	#gst_element_set_state (pipeline, GST_STATE_PLAYING)
+	pipeline.set_state(Gst.State.PLAYING)
 
-	/* Wait till pipeline encounters an error or EOS */
-	g_print ("Running...\n")
-	g_main_loop_run (loop)
+	# Wait till pipeline encounters an error or EOS
+	print ("Running...\n")
+	#g_main_loop_run (loop)
+	try:
+		loop.run()
+	except:
+		pass
 
-	/* Out of the main loop, clean up nicely */
-	g_print ("Returned, stopping playback\n")
-	gst_element_set_state (pipeline, GST_STATE_NULL)
+	# Out of the main loop, clean up nicely
+	print ("Returned, stopping playback\n")
+	#gst_element_set_state (pipeline, GST_STATE_NULL)
+	pipeline.set_state(Gst.State.NULL)
 	
-	g_print ("Average fps %f\n",
+	print ("Average fps %f\n",
 			((perf_measure.count-1)*src_cnt*1000000.0)/perf_measure.total_time)
-	g_print ("Totally %d plates are inferred\n",total_plate_number)
-	g_print ("Deleting pipeline\n")
-	gst_object_unref (GST_OBJECT (pipeline))
-	g_source_remove (bus_watch_id)
-	g_main_loop_unref (loop)
+	print (f"Totally {total_plate_number} plates are inferred\n")
+	print ("Deleting pipeline\n")
+	#gst_object_unref (GST_OBJECT (pipeline))
+	#g_source_remove (bus_watch_id)
+	#g_main_loop_unref (loop)
+
 	return 0
 
 
-if __name__ == '__main__':
+if (__name__ == '__main__'):
 	sys.exit(main(sys.argv))
