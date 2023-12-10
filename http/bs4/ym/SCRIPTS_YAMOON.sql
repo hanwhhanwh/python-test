@@ -14,8 +14,14 @@ CREATE TABLE IF NOT EXISTS `SCRIPTS_YAMOON`
 
 	, PRIMARY KEY (`script_yamoon_no`) USING BTREE
 	, UNIQUE INDEX `UK_FILM_ID_FILE_SIZE` (`yamoon_board_no`, `script_name`) USING BTREE
+	, INDEX `IX_FILM_ID` ( `film_id` ) USING BTREE
 )
 COMMENT='야문 자막 정보 관리 테이블'
 COLLATE='utf8mb4_unicode_ci'
 ENGINE=InnoDB
 ;
+
+/*
+ALTER TABLE `SCRIPTS_YAMOON`
+	ADD INDEX `IX_FILM_ID` ( `film_id` ) USING BTREE;
+*/
