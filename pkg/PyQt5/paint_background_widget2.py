@@ -1,22 +1,23 @@
-# QWidget 배경 그리기 예제 1
+# QWidget 배경 그리기 예제 2
 # make hbesthee@naver.com
 # date 2023-12-11
 
 import sys
 import cv2
 from PyQt5.QtWidgets import QApplication, QWidget
-from PyQt5.QtCore import QMutex, QThread, pyqtSignal, QTimer
-from PyQt5.QtGui import QImage, QPainter, QPixmap
+from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtGui import QImage, QPainter
+from queue import Queue
 from time import sleep
 
 
 class VideoThread(QThread):
-	changeFrame = pyqtSignal(QImage)
+	changeFrame = pyqtSignal()
 
-	def __init__(self, bg_image: QImage, mutex: QMutex):
+	def __init__(self, frame_queue: Queue):
 		super().__init__()
-		self._bg_image = bg_image
-		self._mutex = mutex
+		self._frame_queue = frame_queue
+
 
 	def run(self):
 		# OpenCV를 사용하여 비디오 캡처 객체를 생성합니다.
@@ -29,19 +30,22 @@ class VideoThread(QThread):
 				h, w, ch = rgbImage.shape
 				bytesPerLine = ch * w
 				# 시그널을 통해 메인 스레드에 QImage 객체를 전달합니다.
-				self._mutex.lock()
 				new_frame = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
-				self.changeFrame.emit(new_frame)
-				self._mutex.unlock()
+				try:
+					self._frame_queue.get_nowait() # 기존에 남아 있는 프레임 제거
+				except:
+					pass
+				self._frame_queue.put(new_frame)
+				self.changeFrame.emit()
 				sleep(0.033)
 
 class App(QWidget):
 	def __init__(self):
 		super().__init__()
+		self._queue: Queue = Queue(1)
 		self._bg_image: QImage = None
-		self._mutex: QMutex = QMutex()
 		self.initUI()
-		self.thread = VideoThread(self._bg_image, self._mutex)
+		self.thread = VideoThread(self._queue)
 		self.thread.changeFrame.connect(self.setFrame)
 		self.thread.start()
 
@@ -51,19 +55,19 @@ class App(QWidget):
 		self.show()
 
 	def paintEvent(self, event):
+		if (not self._queue.empty()):
+			self._bg_image = self._queue.get()
+
 		if (self._bg_image == None):
-			#super().paintEvent(event)
+			super().paintEvent(event)
 			return
 		painter = QPainter()
 		painter.begin(self)
 		# QPainter를 사용하여 위젯의 배경에 이미지를 그립니다.
-		self._mutex.lock()
 		painter.drawImage(self.rect(), self._bg_image)
-		self._mutex.unlock()
 		painter.end()
 
-	def setFrame(self, new_frame: QImage):
-		self._bg_image = new_frame.copy()
+	def setFrame(self):
 		self.update()
 
 

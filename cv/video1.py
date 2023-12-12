@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-v = cv2.VideoCapture('D:\\tmp\\VPC-blackbox\\20210606050224-R__1654.mp4')
+v = cv2.VideoCapture('D:\\temp\\1654.mp4')
 
 # 초당 프레임 수
 print(v.get(cv2.CAP_PROP_FPS)) # 9.884579186220412
