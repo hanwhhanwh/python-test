@@ -141,7 +141,6 @@ class Ui_MainWindow(QMainWindow):
 		self.setupUi(self)
 
 		self.widgetTop.setVisible(False)
-		self.setMouseTracking(False)
 
 
 if __name__ == '__main__':
