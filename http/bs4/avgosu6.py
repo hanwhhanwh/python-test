@@ -234,8 +234,11 @@ class AVGosuCrawler(BaseBoardCrawler):
 			url = a_tag.get('href')
 			info[const.CN_DETAIL_URL] = url[url.find('/', 8):url.find('?', 8)]
 			title: str = a_tag.get('title')
-			first_space = title.index(' ')
-			info[const.CN_FILM_ID] = title[:first_space].upper()
+			first_space = title.find(' ')
+			if (first_space >= 0):
+				info[const.CN_FILM_ID] = title[:first_space].upper()
+			else:
+				info[const.CN_FILM_ID] = title.upper()
 			info[const.CN_TITLE] = title[first_space + 1:]
 			list_details_tag = av_list_item.find(class_ = 'list-details text-muted ellipsis')
 			size_info_tag = list_details_tag.find('span') if (list_details_tag) else None
