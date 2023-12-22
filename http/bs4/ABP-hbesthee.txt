@@ -1,0 +1,51 @@
+[Adblock Plus 1.2]
+! Version: 20231222
+! Title: hbesthee AdBlockPlus filter list
+! Expires: 1 days (update frequency)
+!
+aitimes.kr##.banner_box
+inews24.com###scrollDiv
+inews24.com###textLasOut
+etnews.com##div.right_ad4
+etnews.com##div.rank_article01.bdb
+etnews.com##.someclass
+etnews.com###leftWingBanner
+etnews.com###RightWingBanner
+etnews.com###bannerTopmostBox
+etnews.com###adArea
+etnews.com###scrollDiv
+zdnet.co.kr###iconADcloseBox
+zdnet.co.kr###main_right_Floating_banner
+zdnet.co.kr###openmatch_ad
+zdnet.co.kr###textLasOut
+zdnet.co.kr##div.openmatch_ad
+zdnet.co.kr###pscroller2
+zdnet.co.kr##.someclass
+zdnet.co.kr###main_right_Floating_banner2
+zdnet.co.kr###newsmediaBanner
+!
+!---- +19
+!avgosu.com##.row.at-row.at-banner.header
+avgosu5.com##.row.at-row.at-banner
+avgosu6.com##.row.at-row.at-banner
+hellven.net##.thumbnail
+||hellven.net/data/apms/banner/*
+||hellven.net/data/apms/background/*.jpg
+!
+!---- Hero warz
+solfors.com##.fc-ab-root
+solfors.com##.MuiBox-root.css-1h9341h
+hero-wars.fandom.com##.sc-eGRUor.ehWxcn
+!
+!---- torrent site
+||tosarang.net/img/*200.gif
+torrentpi112.com##.basic-post-gallery
+torrentpi112.com##.hd_pops
+torrentpi113.com##.basic-post-gallery
+torrentpi113.com##.hd_pops
+torrentpi114.com##.basic-post-gallery
+torrentpi114.com##.hd_pops
+torrentqq289.com##.row.at-row.at-banner.header
+torrentqq289.com##.row-banner
+torrentqq288.com##.row.at-row.at-banner.header
+torrentqq288.com##.row-banner
