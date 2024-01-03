@@ -129,6 +129,34 @@ class BaseBoardCrawler:
 		return html
 
 
+	def loadHeader(self, header_file: str) -> dict:
+		""" 헤더 파일 정보를 로딩합니다. 헤더 정보를 읽지 못한 경우에는 None를 반환합니다.
+
+		Args:
+			header_file (str): 헤더 정보가 들어 있는 파일 경로 문자열
+
+		Returns:
+			dict: 변환된 헤더 정보. 읽지 못한 경우에는 None
+		"""
+		if (not path.exists(header_file)):
+			return None
+
+		header = dict()
+		f = open(header_file, mode = "rt", encoding = "utf-8", newline = '\n')
+		lines = f.read().splitlines()
+		for line in lines:
+			if (not line.startswith("  -H '")):
+				continue
+
+			items = line[6:-3].split(': ')
+			if (len(items) != 2):
+				continue
+			header[items[0]] = items[1]
+		f.close()
+
+		return header
+
+
 	def parseDetailInfo(self, info: dict, html: str) -> int:
 		""" 게시글 상세 정보를 수집합니다.
 
@@ -162,3 +190,10 @@ class BaseBoardCrawler:
 			int: 성공 여부. 0 = 성공, else 오류 코드
 		"""
 		return 0
+
+
+if (__name__ == '__main__'):
+
+	c = BaseBoardCrawler()
+	header = c.loadHeader('hellven-header.txt')
+	print(header)
