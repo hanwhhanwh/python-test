@@ -103,6 +103,9 @@ class HellvenCrawler(BaseBoardCrawler):
 						info[const.CN_COVER_IMAGE_URL] = img_url[img_url.find('/', 8):] if (img_url != None) else None
 
 				a_tag = soup.find(class_ = "list-group-item break-word view_file_download at-tip")
+				if (a_tag is None):
+					self._logger.warning(f'script file info tag not found : {url=}')
+					return False
 				script_url = a_tag.get('href')
 				info[const.CN_SCRIPT_FILE_URL] = script_url[script_url.find('/', 8):] if (script_url is not None) else None
 				file_size = reg_compile(r'\(\S+\)').findall(a_tag.text.strip())
@@ -306,7 +309,7 @@ class HellvenCrawler(BaseBoardCrawler):
 		self._max_duplicated_count = get_dict_value(self._conf, const.JKEY_MAX_DUPLICATED_COUNT, const.DEF_MAX_DUPLICATED_COUNT)
 		start_page_no = get_dict_value(self._conf, const.JKEY_START_PAGE_NO, 1)
 		self._logger.info(f'GATHERING started: {start_page_no=}, {self._max_duplicated_count=}, {_limit_page_count=}')
-		for page_no in range(start_page_no, _limit_page_count + 1):
+		for page_no in range(407, 1, -1):
 			self._logger.info(f'try parsing {page_no=}')
 			url = f'https://{URL_HOST_HELLVEN}/bbs/board.php?bo_table=ydsmi&page={page_no}'
 
