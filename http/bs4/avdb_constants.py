@@ -30,6 +30,11 @@ CN_THUMBNAIL_URL: Final					= 'thumbnail_url'
 CN_MAGNET_ADDR: Final					= 'magnet_addr'
 CN_RESOLUTION: Final					= 'resolution'
 
+CN_HELLVEN_BOARD_NO: Final				= 'hellven_board_no'
+CN_CONTENT: Final						= 'content'
+CN_CATEGORY: Final						= 'category'
+CN_TAGS: Final							= 'tags'
+CN_REG_DATE: Final						= 'reg_date'
 
 CN_YAMOON_BOARD_NO: Final				= 'yamoon_board_no'
 CN_UPLOADER: Final						= 'uploader'

@@ -103,6 +103,44 @@ VALUES
 		return avgosu_no
 
 
+	def insertHellvenScript(self, hellven_script: dict) -> int:
+		""" hellven에서 수집한 자막 정보를 등록합니다.
+
+		Args:
+			info (dict): 수집한 자막 정보
+
+		Returns:
+			int: 수집한 정보 등록 성공 여부. 0 = 성공, 1 = 이미 동일 정보가 존재함, -1 = 기타 오류 (상세 정보는 오류 로그 확인 필요)
+		"""
+		try:
+			query_insert = f"""
+INSERT INTO `SCRIPTS_HELLVEN`
+(
+	{CN_HELLVEN_BOARD_NO}, {CN_TITLE}, {CN_FILM_ID}, {CN_BOARD_DATE}, {CN_CATEGORY}
+	, {CN_SCRIPT_NAME}, {CN_FILE_SIZE}, {CN_COVER_IMAGE_URL}, {CN_TAGS}, {CN_CONTENT}
+)
+VALUES
+(
+	%s, %s, %s, %s, %s
+	, %s, %s, %s, %s, %s
+)
+	;"""
+			self._cursor.execute(query_insert, (hellven_script.get(CN_HELLVEN_BOARD_NO), hellven_script.get(CN_TITLE), hellven_script.get(CN_FILM_ID), hellven_script.get(CN_BOARD_DATE), hellven_script.get(CN_CATEGORY)
+							, hellven_script.get(CN_SCRIPT_NAME), hellven_script.get(CN_FILE_SIZE), hellven_script.get(CN_COVER_IMAGE_URL), hellven_script.get(CN_TAGS), hellven_script.get(CN_CONTENT)) )
+			script_hellven_no = self._cursor.lastrowid
+			if ( (script_hellven_no == 0) or (script_hellven_no is None) ):
+				self._logger.error(f'insert execution fail : hellven_script info')
+			self._connection.commit()
+		except IntegrityError as ie:
+			self._logger.info(f'IntegrityError : {hellven_script.get(CN_HELLVEN_BOARD_NO)} / {hellven_script.get(CN_SCRIPT_NAME)} / {hellven_script.get(CN_BOARD_DATE)} : {ie}')
+			return ERR_DB_INTEGRITY
+		except Exception as e:
+			self._logger.error(f'insert execution fail : yamoon_script hellven_script >> {e}')
+			return ERR_DB_INTERNAL
+
+		return script_hellven_no
+
+
 	def insertYamoonScript(self, yamoon_script: dict) -> int:
 		""" 수집한 자막 정보를 등록합니다.
 
