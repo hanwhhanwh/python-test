@@ -13,6 +13,8 @@ ERR_HEADER_LOADING2: Final				= -104 # 헤더 파일을 로딩할 수 없음2
 ERR_DOWNLOAD_FILE: Final				= -105 # 파일 다운로드 실패
 ERR_FAIL_REQUEST: Final					= -106 # URL 요청 실패
 
+ERR_CLOUDSCRAPER_CREATION: Final		= -201 # cloudscraper 객체 생성 실패
+
 ERR_DB_CONNECTION: Final				= -1000 # 데이터베이스 연결 실패
 ERR_DB_INTERNAL: Final					= -1001 # 내부 오류 발생 ; 상세 오류 내용은 로그 확인 필요
 ERR_DB_INTEGRITY: Final					= -1002 # 중복된 데이터를 추가했을 경우 발생 ; 기존에 수집한 자료가 발견되었으므로, 프로그램 종료하기
