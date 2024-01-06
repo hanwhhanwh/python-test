@@ -309,7 +309,8 @@ class HellvenCrawler(BaseBoardCrawler):
 		self._max_duplicated_count = get_dict_value(self._conf, const.JKEY_MAX_DUPLICATED_COUNT, const.DEF_MAX_DUPLICATED_COUNT)
 		start_page_no = get_dict_value(self._conf, const.JKEY_START_PAGE_NO, 1)
 		self._logger.info(f'GATHERING started: {start_page_no=}, {self._max_duplicated_count=}, {_limit_page_count=}')
-		for page_no in range(407, 1, -1):
+		# for page_no in range(407, 1, -1):
+		for page_no in range(1, _limit_page_count):
 			self._logger.info(f'try parsing {page_no=}')
 			url = f'https://{URL_HOST_HELLVEN}/bbs/board.php?bo_table=ydsmi&page={page_no}'
 
