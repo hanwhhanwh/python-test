@@ -130,10 +130,16 @@ class AVGosuCrawler(BaseBoardCrawler):
 				img_tag = view_img.next_element
 				# img_tag = next(view_img)
 				img_url = img_tag.get('src')
-				info[const.CN_COVER_IMAGE_URL] = img_url[img_url.find('/', 8):] if (img_url != None) else None
+				cover_url: str = img_url[img_url.find('/', 8):] if (img_url != None) else None
+				if (cover_url is not None):
+					cover_url = cover_url.replace('/uploads/images', '')
+				info[const.CN_COVER_IMAGE_URL] = cover_url
 				img_tag = img_tag.next_element
 				img_url = img_tag.get('src')
-				info[const.CN_THUMBNAIL_URL] = img_url[img_url.find('/', 8):] if (img_url != None) else None
+				thumb_url: str = img_url[img_url.find('/', 8):] if (img_url != None) else None
+				if (thumb_url is not None):
+					thumb_url = cover_url.replace('/uploads/images', '')
+				info[const.CN_THUMBNAIL_URL] = thumb_url
 				
 
 				magnet_tag = soup.find('a', 'btn btn-magnet')
