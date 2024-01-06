@@ -48,7 +48,10 @@ DEF_CONF_HELLVEN: Final					= {
 		, const.JKEY_USERNAME: 'username'
 		, const.JKEY_PASSWORD: 'password'
 	}
+	, const.JKEY_HOST: URL_HOST_HELLVEN
 	, const.JKEY_LIMIT_PAGE_COUNT: const.DEF_LIMIT_PAGE_COUNT
+	, const.JKEY_MAX_DUPLICATED_COUNT: const.DEF_MAX_DUPLICATED_COUNT
+	, const.JKEY_START_PAGE_NO: 1
 }
 
 
