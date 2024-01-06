@@ -48,7 +48,10 @@ DEF_CONF_HELLVEN: Final					= {
 		, const.JKEY_USERNAME: 'username'
 		, const.JKEY_PASSWORD: 'password'
 	}
+	, const.JKEY_HOST: URL_HOST_HELLVEN
 	, const.JKEY_LIMIT_PAGE_COUNT: const.DEF_LIMIT_PAGE_COUNT
+	, const.JKEY_MAX_DUPLICATED_COUNT: const.DEF_MAX_DUPLICATED_COUNT
+	, const.JKEY_START_PAGE_NO: 1
 }
 
 
@@ -87,6 +90,9 @@ class HellvenCrawler(BaseBoardCrawler):
 			response = self._scraper.get(url, headers = self._headers)
 			if (response.status_code == 200):
 				html = response.text
+				f = open('hellven-detail.html', "wt", encoding = "utf-8", newline = "\n")
+				f.write(html)
+				f.close()
 				soup = BeautifulSoup(html, 'html.parser')
 				if (soup == None):
 					self._logger.warning(f'html.parser fail : {url=}')
@@ -319,7 +325,7 @@ class HellvenCrawler(BaseBoardCrawler):
 				response = self._scraper.get(url)
 				if (response.status_code == 200):
 					html = response.text
-					f = open('hellven_list.html', "wt", encoding = "utf-8", newline = "\n")
+					f = open('hellven-list.html', "wt", encoding = "utf-8", newline = "\n")
 					f.write(html)
 					f.close()
 					# return
