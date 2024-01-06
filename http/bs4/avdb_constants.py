@@ -20,6 +20,7 @@ ERR_DB_INTERNAL: Final					= -1001 # 내부 오류 발생 ; 상세 오류 내용
 ERR_DB_INTEGRITY: Final					= -1002 # 중복된 데이터를 추가했을 경우 발생 ; 기존에 수집한 자료가 발견되었으므로, 프로그램 종료하기
 
 
+CN_AVGOSU_BOARD_NO: Final				= 'avgosu_board_no'
 CN_DETAIL_URL: Final					= 'detail_url'
 CN_TITLE: Final							= 'title'
 CN_FILM_ID: Final						= 'film_id'
@@ -27,6 +28,7 @@ CN_AVGOSU_DATE: Final					= 'avgosu_date'
 CN_FILE_SIZE: Final						= 'file_size'
 CN_COVER_IMAGE_URL: Final				= 'cover_image_url'
 CN_THUMBNAIL_URL: Final					= 'thumbnail_url'
+CN_MAGNET_INFO: Final					= 'magnet_info'
 CN_MAGNET_ADDR: Final					= 'magnet_addr'
 CN_RESOLUTION: Final					= 'resolution'
 
@@ -53,6 +55,7 @@ JKEY_DB_NAME: Final						= 'db_name'
 JKEY_DB_ENCODING: Final					= 'encoding'
 JKEY_USERNAME: Final					= 'username'
 JKEY_PASSWORD: Final					= 'password'
+JKEY_HOST: Final						= 'host'
 JKEY_LIMIT_PAGE_COUNT: Final			= 'limit_page_count'
 JKEY_MAX_DUPLICATED_COUNT: Final		= 'max_duplicated_count'
 JKEY_START_PAGE_NO: Final				= 'start_page_no'

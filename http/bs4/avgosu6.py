@@ -7,6 +7,7 @@ from datetime import datetime
 from logging import getLogger, Logger
 from mysql.connector.errors import IntegrityError
 from os import path, makedirs, remove
+from re import compile
 from sqlalchemy import create_engine
 from time import sleep
 from typing import Final
@@ -27,32 +28,12 @@ from lib.json_util import get_dict_value, init_conf_files, make_init_folders, lo
 
 LOGGER_LEVEL_DEBUG: Final				= 10
 LOGGER_NAME: Final						= 'avgosu'
-
 URL_HOST_AVGOSU: Final					= 'avgosu5.com'
+
 HEADER_USER_AGENT: Final				= "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
 
 DOM_PATH_AV_LIST: Final					= '#fboardlist > div.list-container'
 DOM_PATH_SUB_INFO: Final				= 'body > div.wrapper > div.container.content > div:nth-child(1) > div.col-md-3.col-sm-12 > div.panel.panel-default'
-
-DEFAULT_HEADERS: Final					= {
-	'authority': f'{URL_HOST_AVGOSU}'
-	, 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7'
-	, 'accept-language': 'ko-KR,ko;q=0.9'
-	, 'cache-control': 'no-cache'
-	, 'content-type': 'application/x-www-form-urlencoded'
-	, 'origin': f'https://{URL_HOST_AVGOSU}'
-	, 'pragma': 'no-cache'
-	, 'referer': f'https://{URL_HOST_AVGOSU}'
-	, 'sec-ch-ua': '"Chromium";v="116", "Not)A;Brand";v="24", "Google Chrome";v="116"'
-	, 'sec-ch-ua-mobile': '?0'
-	, 'sec-ch-ua-platform': '"Windows"'
-	, 'sec-fetch-dest': 'document'
-	, 'sec-fetch-mode': 'navigate'
-	, 'sec-fetch-site': 'same-origin'
-	, 'sec-fetch-user': '?1'
-	, 'upgrade-insecure-requests': '1'
-	, 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36'
-}
 
 
 DEF_AVGOSU_CONF_FILE: Final				= '../../conf/avgosu.json'
@@ -65,7 +46,10 @@ DEF_CONF_AVGOSU: Final					= {
 		, const.JKEY_USERNAME: 'username'
 		, const.JKEY_PASSWORD: 'password'
 	}
+	, const.JKEY_HOST: URL_HOST_AVGOSU
 	, const.JKEY_LIMIT_PAGE_COUNT: const.DEF_LIMIT_PAGE_COUNT
+	, const.JKEY_MAX_DUPLICATED_COUNT: const.DEF_MAX_DUPLICATED_COUNT
+	, const.JKEY_START_PAGE_NO: 1
 }
 
 
@@ -79,10 +63,39 @@ class AVGosuCrawler(BaseBoardCrawler):
 		super(AVGosuCrawler, self).__init__()
 
 		self._duplicated_count = 0
-		self._headers = DEFAULT_HEADERS
+		self._headers: dict = None
+		self._host = URL_HOST_AVGOSU
 
 		make_init_folders(('../../logs', '../../db', '../../conf'))
 		self._logger: Logger = createLogger(log_path = '../../logs', log_filename = LOGGER_NAME, log_level = LOGGER_LEVEL_DEBUG)
+
+
+	def getDefaultHeaders(self) -> dict:
+		""" AVGOSU 요청을 위한 기본 HEADER 정보를 반환합니다.
+
+		Returns:
+			dict: 기본 헤더 정보
+		"""
+		headers = {
+			'authority': f'{self._host}'
+			, 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7'
+			, 'accept-language': 'ko-KR,ko;q=0.9'
+			, 'cache-control': 'no-cache'
+			, 'content-type': 'application/x-www-form-urlencoded'
+			, 'origin': f'https://{self._host}'
+			, 'pragma': 'no-cache'
+			, 'referer': f'https://{self._host}'
+			, 'sec-ch-ua': '"Chromium";v="116", "Not)A;Brand";v="24", "Google Chrome";v="116"'
+			, 'sec-ch-ua-mobile': '?0'
+			, 'sec-ch-ua-platform': '"Windows"'
+			, 'sec-fetch-dest': 'document'
+			, 'sec-fetch-mode': 'navigate'
+			, 'sec-fetch-site': 'same-origin'
+			, 'sec-fetch-user': '?1'
+			, 'upgrade-insecure-requests': '1'
+			, 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36'
+		}
+		return headers
 
 
 	def getDetailInfo(self, info: dict) -> bool:
@@ -94,7 +107,8 @@ class AVGosuCrawler(BaseBoardCrawler):
 		Returns:
 			bool: 정보 획득 성공 여부. 필수 항목들을 모두 가져왔는가?
 		"""
-		url: str = f'https://{URL_HOST_AVGOSU}' + info[const.CN_DETAIL_URL]
+		avgosu_board_no = info[const.CN_AVGOSU_BOARD_NO]
+		url: str = f'https://{self._host}/torrent/etc/{avgosu_board_no}.html'
 		if ( (url == None) or (url.strip() == '') ):
 			self._logger.warning(f'URL info fail! : {info}')
 			return False
@@ -105,12 +119,12 @@ class AVGosuCrawler(BaseBoardCrawler):
 				html = response.text
 				soup = BeautifulSoup(html, 'html.parser')
 				if (soup == None):
-					self._logger.warning(f'html.parser fail : {url=}')
+					self._logger.warning(f'html.parser fail ({avgosu_board_no}) : {url=}')
 					return False
 				
 				view_img = soup.find('div', 'view-img')
 				if (view_img == None):
-					self._logger.warning(f'"view-img" div tag not found : {url=}')
+					self._logger.warning(f'"view-img" div tag not found ({avgosu_board_no}) : {url=}')
 					return False
 				
 				img_tag = view_img.next_element
@@ -123,7 +137,12 @@ class AVGosuCrawler(BaseBoardCrawler):
 				
 
 				magnet_tag = soup.find('a', 'btn btn-magnet')
-				info[const.CN_MAGNET_ADDR] = self.getMagnetAddr(magnet_tag)
+				magnet_addr = self.getMagnetAddr(magnet_tag)
+				if ((len(magnet_addr) % 2) != 0):
+					self._logger.warning(f'magnet_addr is wrong ({avgosu_board_no}) : {magnet_addr=}')
+					info[const.CN_MAGNET_INFO] = None
+				else:
+					info[const.CN_MAGNET_INFO] = bytes.fromhex(magnet_addr[20:])
 
 				torrent_tag = soup.find('div', 'view-torrent')
 				if (torrent_tag.text.find('-HD.torrent') > 0):
@@ -132,7 +151,7 @@ class AVGosuCrawler(BaseBoardCrawler):
 					info[const.CN_RESOLUTION] = 'F'
 				return True
 			else:
-				self._logger.warning(f'detail info request fail {_ + 1} {url=} : {response.status_code=}')
+				self._logger.warning(f'detail info request fail ({avgosu_board_no}) {_ + 1} : {response.status_code=}')
 			sleep(const.DEF_RETRY_WAIT_TIME)
 
 		return False
@@ -160,7 +179,7 @@ class AVGosuCrawler(BaseBoardCrawler):
 			pos1 += 1
 			pos2 = onclick.find("'", pos1)
 			if (pos2 >= 0):
-				magnet_url = f'https://{URL_HOST_AVGOSU}{onclick[pos1:pos2]}'
+				magnet_url = f'https://{self._host}{onclick[pos1:pos2]}'
 
 		url = magnet_url
 		if ( (url == None) or (url.strip() == '') ):
@@ -168,7 +187,7 @@ class AVGosuCrawler(BaseBoardCrawler):
 			return None
 
 		for _ in range(const.DEF_RETRY_COUNT):
-			response = requests.get(url, headers = DEFAULT_HEADERS)
+			response = requests.get(url, headers = self._headers)
 			if (response.status_code == 200):
 				html = response.text
 				pos1 = html.find('magnet:?')
@@ -187,21 +206,24 @@ class AVGosuCrawler(BaseBoardCrawler):
 	def init(self) -> int:
 		self.initConf(DEF_AVGOSU_CONF_FILE, DEF_CONF_AVGOSU)
 
+		self._host = get_dict_value(self._conf, const.JKEY_HOST, URL_HOST_AVGOSU)
+
 		self._db = AvdbDataModel()
 		self._db.setLogger(self._logger)
 		self._db.connectDatabase(self._conf.get(const.JSON_DB))
 
 		try:
-			headers, error_message = load_json_conf('../../conf/avgosu_header.json')
-			if (error_message != None):
-				self._logger.error(f'Header loading fail! : {error_message}')
-				self._headers = DEFAULT_HEADERS
+			headers = self.loadHeader('avgosu-header.txt')
+			if (headers == None):
+				self._logger.error(f'Header loading fail!')
+				self._headers = self.getDefaultHeaders()
 				# return const.ERR_HEADER_LOADING
 			else:
 				self._headers = headers
 		except Exception as e:
 			self._logger.error(f'Header loading error : {e}')
-			return const.ERR_HEADER_LOADING2
+			self._headers = self.getDefaultHeaders()
+			# return const.ERR_HEADER_LOADING2
 
 		return 0
 
@@ -232,7 +254,14 @@ class AVGosuCrawler(BaseBoardCrawler):
 			info = dict()
 			a_tag = av_list_item.find('a')
 			url = a_tag.get('href')
-			info[const.CN_DETAIL_URL] = url[url.find('/', 8):url.find('?', 8)]
+			board_no = compile(r"etc\/\d+\.htm").findall(url)
+			if (len(board_no) > 0):
+				avgosu_board_no = board_no[0][4:-4]
+				info[const.CN_AVGOSU_BOARD_NO] = avgosu_board_no
+			else:
+				self._logger.warning(f'Fetch fail of board_no : {url=}')
+				continue
+			# info[const.CN_DETAIL_URL] = url[url.find('/', 8):url.find('?', 8)]
 			title: str = a_tag.get('title')
 			first_space = title.find(' ')
 			if (first_space >= 0):
@@ -252,7 +281,7 @@ class AVGosuCrawler(BaseBoardCrawler):
 				date_info = f'{today} {date_info}'
 			info[const.CN_AVGOSU_DATE] = date_info
 
-			self._logger.info(f'getDetailInfo : {info[const.CN_FILM_ID]} / {info[const.CN_FILE_SIZE]} / {info[const.CN_AVGOSU_DATE]}')
+			self._logger.info(f'getDetailInfo ({avgosu_board_no}) : {info[const.CN_FILM_ID]} / {info[const.CN_FILE_SIZE]} / {info[const.CN_AVGOSU_DATE]}')
 			if (self.getDetailInfo(info)):
 				ret = self._db.insertAvgosu(info)
 				# ret = self.insert(connection, cursor, info)
@@ -264,7 +293,7 @@ class AVGosuCrawler(BaseBoardCrawler):
 					self._duplicated_count = 0
 				info_list.append(info)
 			else:
-				self._logger.warning(f'Fetch fail of detail info! : {info}')
+				self._logger.warning(f'Fetch fail of detail info! ({avgosu_board_no}) : {info}')
 
 		self._logger.info(f'parsed info count = {len(info_list)}')
 		return 0
@@ -288,10 +317,10 @@ class AVGosuCrawler(BaseBoardCrawler):
 		self._logger.info(f'GATHERING started: {start_page_no=}, {self._max_duplicated_count=}, {_limit_page_count=}')
 		for page_no in range(start_page_no, _limit_page_count + 1):
 			self._logger.info(f'try parsing {page_no=}')
-			url = f'https://{URL_HOST_AVGOSU}/torrent/etc.html?&page={page_no}'
+			url = f'https://{self._host}/torrent/etc.html?&page={page_no}'
 
 			for _ in range(const.DEF_RETRY_COUNT):
-				response = requests.get(url, headers = DEFAULT_HEADERS)
+				response = requests.get(url, headers = self._headers)
 				if (response.status_code == 200):
 					html = response.text
 					# print(html)
