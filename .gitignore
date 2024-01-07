@@ -8,7 +8,7 @@ cv/dnn/yolov4-tiny.weights
 cv/dnn/yolov4.weights
 output.mp4
 http/hello/static/
-http/bs4/hellven-*
+http/bs4/html/
 http/bs4/scripts/
 conf/
-http/bs4/hellven-header.txt
+http/bs4/*-header.txt
