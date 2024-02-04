@@ -26,7 +26,7 @@ zdnet.co.kr###newsmediaBanner
 !
 !---- +19
 !avgosu.com##.row.at-row.at-banner.header
-avgosu5.com##.row.at-row.at-banner
+avgosu7.com##.row.at-row.at-banner
 avgosu6.com##.row.at-row.at-banner
 hellven.net##.thumbnail
 ||hellven.net/data/apms/banner/*

@@ -1,6 +1,6 @@
-# gather AVGOSU sample 6
+# gather AVGOSU clip list (etc)
 # make hbesthee@naver.com
-# date 2023-10-18
+# date 2024-02-04
 
 from bs4 import BeautifulSoup, PageElement, Tag
 from datetime import datetime
