@@ -28,7 +28,7 @@ from lib.json_util import get_dict_value, init_conf_files, make_init_folders, lo
 
 LOGGER_LEVEL_DEBUG: Final				= 10
 LOGGER_NAME: Final						= 'avgosu'
-URL_HOST_AVGOSU: Final					= 'avgosu5.com'
+URL_HOST_AVGOSU: Final					= 'avgosu6.com'
 
 HEADER_USER_AGENT: Final				= "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
 
