@@ -1,5 +1,5 @@
 [Adblock Plus 1.2]
-! Version: 20240212
+! Version: 20240218
 ! Title: hbesthee AdBlockPlus filter list
 ! Expires: 1 days (update frequency)
 !
@@ -39,13 +39,13 @@ hero-wars.fandom.com##.sc-eGRUor.ehWxcn
 !
 !---- torrent site
 ||tosarang.net/img/*200.gif
-torrentpi120.com##.basic-post-gallery
-torrentpi120.com##.hd_pops
-torrentpi118.com##.basic-post-gallery
-torrentpi118.com##.hd_pops
-torrentpi119.com##.basic-post-gallery
-torrentpi119.com##.hd_pops
-torrentqq295.com##.row.at-row.at-banner.header
-torrentqq295.com##.row-banner
+torrentpi121.com##.basic-post-gallery
+torrentpi121.com##.hd_pops
+torrentpi122.com##.basic-post-gallery
+torrentpi122.com##.hd_pops
+torrentpi123.com##.basic-post-gallery
+torrentpi123.com##.hd_pops
+torrentqq297.com##.row.at-row.at-banner.header
+torrentqq297.com##.row-banner
 torrentqq296.com##.row.at-row.at-banner.header
 torrentqq296.com##.row-banner
