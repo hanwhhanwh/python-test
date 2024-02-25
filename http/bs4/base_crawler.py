@@ -44,7 +44,11 @@ class BaseBoardCrawler:
 		"""
 		html = ''
 		for retry_index in range(1, DEF_RETRY_COUNT + 1):
-			response = get_req(url, headers = self._headers)
+			try:
+				response = get_req(url, headers = self._headers)
+			except Exception as e:
+				self._logger.warning(f'request fail {url=} : {e}')
+				continue
 			if (response.status_code == 200):
 				html = response.text
 				break

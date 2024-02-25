@@ -114,7 +114,11 @@ class AVGosuCrawler(BaseBoardCrawler):
 			return False
 
 		for _ in range(const.DEF_RETRY_COUNT):
-			response = requests.get(url, headers = self._headers)
+			try:
+				response = requests.get(url, headers = self._headers)
+			except Exception as e:
+				self._logger.warning(f'request detail info fail : {e}')
+				continue
 			if (response.status_code == 200):
 				html = response.text
 				soup = BeautifulSoup(html, 'html.parser')
@@ -193,7 +197,11 @@ class AVGosuCrawler(BaseBoardCrawler):
 			return None
 
 		for _ in range(const.DEF_RETRY_COUNT):
-			response = requests.get(url, headers = self._headers)
+			try:
+				response = requests.get(url, headers = self._headers)
+			except Exception as e:
+				self._logger.warning(f'request magnet info fail ({url}): {e}')
+				continue
 			if (response.status_code == 200):
 				html = response.text
 				pos1 = html.find('magnet:?')
@@ -326,7 +334,11 @@ class AVGosuCrawler(BaseBoardCrawler):
 			url = f'https://{self._host}/torrent/etc.html?&page={page_no}'
 
 			for _ in range(const.DEF_RETRY_COUNT):
-				response = requests.get(url, headers = self._headers)
+				try:
+					response = requests.get(url, headers = self._headers)
+				except Exception as e:
+					self._logger.warning(f'request fail {url=} : {e}')
+					continue
 				if (response.status_code == 200):
 					html = response.text
 					# print(html)
