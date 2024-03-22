@@ -41,11 +41,11 @@ hero-wars.fandom.com##.sc-eGRUor.ehWxcn
 ||tosarang.net/img/*200.gif
 torrentpi127.com##.basic-post-gallery
 torrentpi127.com##.hd_pops
-torrentpi125.com##.basic-post-gallery
-torrentpi125.com##.hd_pops
+torrentpi128.com##.basic-post-gallery
+torrentpi128.com##.hd_pops
 torrentpi126.com##.basic-post-gallery
 torrentpi126.com##.hd_pops
-torrentqq301.com##.row.at-row.at-banner.header
-torrentqq301.com##.row-banner
-torrentqq302.com##.row.at-row.at-banner.header
-torrentqq302.com##.row-banner
+torrentqq303.com##.row.at-row.at-banner.header
+torrentqq303.com##.row-banner
+torrentqq304.com##.row.at-row.at-banner.header
+torrentqq304.com##.row-banner
