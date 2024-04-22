@@ -39,13 +39,13 @@ hero-wars.fandom.com##.sc-eGRUor.ehWxcn
 !
 !---- torrent site
 ||tosarang.net/img/*200.gif
-torrentpi130.com##.basic-post-gallery
-torrentpi130.com##.hd_pops
-torrentpi131.com##.basic-post-gallery
-torrentpi131.com##.hd_pops
-torrentpi132.com##.basic-post-gallery
-torrentpi132.com##.hd_pops
-torrentqq303.com##.row.at-row.at-banner.header
-torrentqq303.com##.row-banner
-torrentqq304.com##.row.at-row.at-banner.header
-torrentqq304.com##.row-banner
+torrentpi133.com##.basic-post-gallery
+torrentpi133.com##.hd_pops
+torrentpi134.com##.basic-post-gallery
+torrentpi134.com##.hd_pops
+torrentpi135.com##.basic-post-gallery
+torrentpi135.com##.hd_pops
+torrentqq307.com##.row.at-row.at-banner.header
+torrentqq307.com##.row-banner
+torrentqq308.com##.row.at-row.at-banner.header
+torrentqq308.com##.row-banner
