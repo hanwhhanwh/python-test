@@ -1,5 +1,5 @@
 [Adblock Plus 1.2]
-! Version: 20240311
+! Version: 20240504
 ! Title: hbesthee AdBlockPlus filter list
 ! Expires: 1 days (update frequency)
 !
