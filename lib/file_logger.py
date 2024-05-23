@@ -41,7 +41,8 @@ class FileLogger:
 			, log_filename = 'logger'
 			, log_ext = '.log'
 			, log_level = logging.WARNING
-			, log_console = True):
+			, log_console = True
+			, logger_name = None):
 		"""Logger 클래스를 초기화합니다.
 
 		Args:
@@ -57,6 +58,7 @@ class FileLogger:
 		self.log_ext		= log_ext
 		self.log_level		= log_level
 		self.log_console	= log_console
+		self._logger_name	= logger_name
 
 		# folder create
 		if not os.path.exists(self.log_path):
@@ -72,7 +74,7 @@ class FileLogger:
 			logging.Logger: 로깅처리 실 객체
 		"""
 		# intialize logger
-		log = logging.getLogger(self.log_filename)
+		log = logging.getLogger(self._logger_name)
 		if (len(log.handlers) > 0):
 			return log
 		log.setLevel(self.log_level) 
@@ -129,7 +131,8 @@ def createLogger(log_path = './logs'
 			, log_filename = 'logger'
 			, log_ext = '.log'
 			, log_level = logging.WARNING
-			, log_console = True):
+			, log_console = True
+			, logger_name = None):
 	"""Logger 클래스를 초기화합니다.
 
 	Args:
@@ -141,7 +144,7 @@ def createLogger(log_path = './logs'
 	"""
 
 	# intialize logger
-	log = logging.getLogger(log_filename)
+	log = logging.getLogger(logger_name)
 	if (len(log.handlers) > 0):
 		return log
 	log.setLevel(log_level) 
