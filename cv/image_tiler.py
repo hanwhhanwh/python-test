@@ -16,13 +16,16 @@ def create_image_tile(input_dir: str, output_tile_image_filename: str, tile_widt
 	OpenCV를 사용하여 폴더 내 이미지를 타일 형태로 배치합니다.
 	
 	Args:
-	- input_folder: 이미지가 있는 폴더 경로
-	- output_path: 결과 타일 이미지 저장 경로
-	- total_width: 최종 생성될 이미지의 전체 너비
-	- cols: 타일 열의 수 (기본 5열)
-	- tile_height: 각 타일 이미지의 높이
-	- margin: 타일 간 여백 크기 (픽셀)
-	- background_color: 배경색 (B, G, R)
+		input_folder: 이미지가 있는 폴더 경로
+		output_path: 결과 타일 이미지 저장 경로
+		total_width: 최종 생성될 이미지의 전체 너비
+		cols: 타일 열의 수 (기본 5열)
+		tile_height: 각 타일 이미지의 높이
+		margin: 타일 간 여백 크기 (픽셀)
+		background_color: 배경색 (B, G, R)
+
+	Returns:
+		bool: 타일 이미지 성공 여부
 	"""
 	# 이미지 파일 목록 가져오기
 	image_files = [f for f in os.listdir(input_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp'))]
@@ -60,6 +63,7 @@ def create_image_tile(input_dir: str, output_tile_image_filename: str, tile_widt
 			processed_images.append(resized_img)
 		except Exception as e:
 			print(f"{filename} 처리 중 오류: {e}")
+			return False
 	
 	# 행 수 계산
 	total_images = len(processed_images)
@@ -94,6 +98,9 @@ def create_image_tile(input_dir: str, output_tile_image_filename: str, tile_widt
 	
 	print(f'타일 이미지가 "{output_tile_image_filename}"에 저장되었습니다.')
 	print(f'전체 너비: {width}, 행: {rows}, 열: {cols}, 여백: {margin}px')
+
+	return True
+
 
 # 사용 예시
 if __name__ == "__main__":
