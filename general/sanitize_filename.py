@@ -1,3 +1,7 @@
+# -*- coding: utf-8 -*-
+# 
+# made : hbesthee@naver.com
+# date : 2024-12-30
 
 
 from os.path import splitext
@@ -16,8 +20,7 @@ def sanitize_filename(filename: str, replace_char: str = "_") -> str:
     Returns:
         str: 안전한 파일명
     """
-    # 유니코드 정규화 (한글 자모 결합 등)
-    filename = normalize('NFKC', filename)
+    filename = normalize('NFKC', filename) # 유니코드 정규화 (한글 자모 결합 등)
     
     # 윈도우즈에서 사용할 수 없는 예약어 리스트
     WINDOWS_RESERVED = ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4',
