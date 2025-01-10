@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 
 
-def create_image_tile(input_dir: str, output_tile_image_filename: str, tile_width: int = 1000
+def create_image_tile(input_dir: str, output_tile_image_filename: str, output_tile_width: int = 2000
 					, cols: int = 5, tile_height: int = 200, margin = 3, background_color = (255, 255, 255)) -> bool:
 	"""
 	OpenCV를 사용하여 폴더 내 이미지를 타일 형태로 배치합니다.
@@ -36,7 +36,7 @@ def create_image_tile(input_dir: str, output_tile_image_filename: str, tile_widt
 		return False
 	
 	# 각 타일의 너비 계산 (여백 제외)
-	tile_width = (tile_width - (cols + 1) * margin) // cols
+	tile_width = (output_tile_width - (cols + 1) * margin) // cols
 	
 	# 이미지 로드 및 리사이즈
 	processed_images = []
@@ -70,7 +70,7 @@ def create_image_tile(input_dir: str, output_tile_image_filename: str, tile_widt
 	rows = math.ceil(total_images / cols)
 	
 	# 최종 이미지 크기 계산 (여백 포함)
-	width = tile_width
+	width = output_tile_width
 	height = rows * tile_height + (rows + 1) * margin
 	
 	# 배경 이미지 생성 (흰색)
@@ -109,7 +109,7 @@ if __name__ == "__main__":
 	
 	# 다양한 사용 방법 예시:
 	# 1. 기본 설정 (전체 너비 1000px, 5열, 기본 여백)
-	create_image_tile(input_folder, output_path)
+	create_image_tile(input_folder, output_path, cols = 9, output_tile_width = 1400, tile_height = 88)
 	
 	# 2. 사용자 지정 설정
 	# create_image_tile(
