@@ -26,4 +26,20 @@ print(f"{splitext('/foo/...a.jpeg')=}")
 print(f"{splitext('/foo/...a....jpeg')=}")
 print(f"{splitext('/foo/....jpeg')=}")
 print(f"{splitext('')=}")
-print(f"{splitext(None)=}")
+# print(f"{splitext(None)=}") # TypeError: expected str, bytes or os.PathLike object, not NoneType
+
+""" RESULT:
+basename='filename.ext'
+dirname='/path/to'
+filenames=('filename', '.ext')
+
+splitext('bar')=('bar', '')
+splitext('foo.bar.exe')=('foo.bar', '.exe')
+splitext('/foo/bar.exe')=('/foo/bar', '.exe')
+splitext('.cshrc')=('.cshrc', '')
+splitext('/foo/a....jpeg')=('/foo/a...', '.jpeg')
+splitext('/foo/...a.jpeg')=('/foo/...a', '.jpeg')
+splitext('/foo/...a....jpeg')=('/foo/...a...', '.jpeg')
+splitext('/foo/....jpeg')=('/foo/....jpeg', '')
+splitext('')=('', '')
+"""
