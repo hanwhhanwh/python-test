@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # TestCase - guide to unit tests demo 1
 # date	2025-04-10
 # author	hbesthee@naver.com
