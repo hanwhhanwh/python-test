@@ -6,7 +6,8 @@
 
 # Original Packages
 from datetime import datetime
-from os import getcwd
+from os import close as os_close, path, remove
+from tempfile import mkstemp
 from typing import Dict, Any
 
 import sqlite3
@@ -187,7 +188,10 @@ class DatabaseWorker:
 # 사용 예제
 def main():
 	# 데이터베이스 워커 생성 및 시작
-	db_worker = DatabaseWorker('user_logs.db')
+	temp_db_fd, temp_db_fn = mkstemp(suffix='.db')
+	os_close(temp_db_fd)
+
+	db_worker = DatabaseWorker(temp_db_fn)
 	db_worker.start()
 
 	try:
@@ -219,6 +223,7 @@ def main():
 			time.sleep(0.5)
 
 		print("모든 작업 큐에 추가 완료")
+		return temp_db_fn
 
 	finally:
 		# 안전한 종료
@@ -228,9 +233,9 @@ def main():
 
 
 # 결과 확인 함수
-def check_results():
+def check_results(db_filename):
 	"""데이터베이스 결과 확인"""
-	conn = sqlite3.connect('user_logs.db')
+	conn = sqlite3.connect(db_filename)
 	cursor = conn.cursor()
 
 	cursor.execute('SELECT COUNT(*) FROM user_logs')
@@ -249,5 +254,7 @@ def check_results():
 
 
 if (__name__ == "__main__"):
-	main()
-	check_results()
+	temp_db_fn = main()
+	check_results(temp_db_fn)
+	if (path.exists(temp_db_fn)):
+		remove(temp_db_fn)
