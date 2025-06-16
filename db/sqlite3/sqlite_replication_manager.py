@@ -4,19 +4,19 @@
 # date : 2025-06-12
 
 # Original Packages
-from datetime import datetime, timedelta
+from contextlib import contextmanager
+from datetime import datetime, date
 from enum import Enum
-from pathlib import Path
-from sqlite3 import connect, Connection, Cursor, _Parameters
-from typing import Optional, Union, Dict, Any, List
+from os import listdir, makedirs, path, remove
+from queue import Empty, Full, Queue
+from shutil import copy2, copyfileobj
+from threading import Event, local as thread_local, RLock, Thread
+from time import time
+from typing import Optional, Tuple, Any, Generator
+from gzip import open as gzip_open
 
-import gzip
 import logging
-import queue
 import sqlite3
-import shutil
-import threading
-import time
 
 
 
@@ -29,459 +29,399 @@ import time
 
 
 
-class RetentionPolicy(Enum):
-	"""데이터 보존 정책"""
+class RetentionPeriod(Enum):
 	UNLIMITED = "unlimited"
-	YEARLY = "yearly"
-	MONTHLY = "monthly"
+	ONE_YEAR = "1year"
+	ONE_MONTH = "1month"
 
 
 
 class SqliteReplicationManager:
-	"""SQLite 데이터베이스 이중화 및 백업 관리 클래스"""
-
-	def __init__(self,
-				db_name: str,
-				db_folder: str,
-				backup_folder: str,
-				retention_policy: Union[str, RetentionPolicy] = RetentionPolicy.MONTHLY,
-				table_schema: Optional[str] = None):
+	def __init__(self, db_name: str, db_folder: str, backup_folder: str,
+				retention_period: RetentionPeriod = RetentionPeriod.UNLIMITED):
 		"""
-		SQLite 이중화 관리자 초기화
+		SQLite 이중화 매니저 초기화
 
 		Args:
-			db_name (str): 데이터베이스 파일명 (확장자 제외)
-			db_folder (str): 메인 DB 저장 폴더 경로
-			backup_folder (str): 백업 DB 저장 폴더 경로
-			retention_policy (RetentionPolicy): 보존 정책 (UNLIMITED, YEARLY, MONTHLY)
-			table_schema (str): 테이블 생성 SQL (None일 경우 기본 로그 테이블 사용)
+			db_name: 데이터베이스 이름 (확장자 제외)
+			db_folder: 메인 DB 폴더 경로
+			backup_folder: 백업 DB 폴더 경로
+			retention_period: 데이터 보존 기간
 		"""
-		self.db_name = db_name
-		self.db_folder = Path(db_folder)
-		self.backup_folder = Path(backup_folder)
+		self._execute_queue_timeout = 15
+		self._prev_check_time = time()
 
-		# 보존 정책 설정
-		if isinstance(retention_policy, str):
-			self.retention_policy = RetentionPolicy(retention_policy.lower())
-		else:
-			self.retention_policy = retention_policy
+		self.db_name = db_name
+		self.db_folder = db_folder
+		self.backup_folder = backup_folder
+		self.retention_period = retention_period
 
 		# 폴더 생성
-		self.db_folder.mkdir(parents=True, exist_ok=True)
-		self.backup_folder.mkdir(parents=True, exist_ok=True)
+		makedirs(db_folder, exist_ok=True)
+		makedirs(backup_folder, exist_ok=True)
 
 		# 파일 경로 설정
-		self.main_db_path = self.db_folder / f"{self.db_name}.db"
-		self.backup_db_path = self.backup_folder / f"{self.db_name}.db"
+		self.main_db_path = path.join(db_folder, f"{db_name}.db")
+		current_month = datetime.now().strftime("%Y%m")
+		self.backup_db_path = path.join(backup_folder, f"{db_name}-{current_month}.db")
 
-		# 스레드 안전성을 위한 락과 큐
-		self._lock = threading.RLock()
-		self._write_queue = queue.Queue()
-		self._shutdown_event = threading.Event()
-
-		# 백그라운드 작업자 스레드
-		self._worker_thread = threading.Thread(target=self._worker, daemon=True)
-		self._worker_thread.start()
+		# 스레드 안전성을 위한 락
+		self._lock = RLock()
+		self._connection_lock = RLock()
 
 		# 로깅 설정
-		self._setup_logging()
+		logging.basicConfig(level=logging.INFO)
+		self.logger = logging.getLogger(__name__)
 
-		# 초기 데이터베이스 설정
-		self._initialize_databases()
+		# 백그라운드 작업을 위한 큐와 스레드
+		self._execute_queue = Queue()
+		self._shutdown_event = Event()
+		self._worker_thread = Thread(target=self._background_worker, daemon=True)
+		self._worker_thread.start()
 
-		# 로테이션 체크
-		if self.retention_policy != RetentionPolicy.UNLIMITED:
-			self._check_rotation()
+		# 연결 관리
+		self._thread_local = thread_local()
 
+		# 초기 연결 설정
+		self._initialize_connections()
 
-	def _setup_logging(self):
-		"""내부 로깅 설정"""
-		self.logger = logging.getLogger(f"SqliteReplicationManager_{self.db_name}")
-		self.logger.setLevel(logging.INFO)
-
-		if not self.logger.handlers:
-			handler = logging.StreamHandler()
-			formatter = logging.Formatter(
-				'%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-			)
-			handler.setFormatter(formatter)
-			self.logger.addHandler(handler)
+		# 월별 로테이션 체크
+		# self._check_monthly_rotation()
 
 
-	def _initialize_databases(self):
-		"""데이터베이스 초기화"""
-		try:
-			# 메인 DB 초기화
-			with sqlite3.connect(str(self.main_db_path)) as conn:
-				conn.execute(self.table_schema)
-				conn.commit()
+	def _background_worker(self):
+		"""백그라운드 워커 스레드"""
+		self.logger.info("Background worker started.")
 
-			# 백업 DB 초기화
-			with sqlite3.connect(str(self.backup_db_path)) as conn:
-				conn.execute(self.table_schema)
-				conn.commit()
-
-			self.logger.info("데이터베이스 초기화 완료")
-
-		except Exception as e:
-			self.logger.error(f"데이터베이스 초기화 실패: {e}")
-			raise
-
-
-	def _worker(self):
-		"""백그라운드 작업자 스레드"""
-		while not self._shutdown_event.is_set():
+		while (not self._shutdown_event.is_set()):
 			try:
-				# 큐에서 작업 가져오기 (타임아웃 1초)
-				task = self._write_queue.get(timeout=1.0)
+				# 큐에서 DDL 작업 가져오기 (타임아웃 1초)
+				task = self._execute_queue.get(timeout=1.0)
+				self._execute_ddl(task['sql'], task['parameters']) # DDL 실행
+				self._execute_queue.task_done()
 
-				if task is None:  # 종료 신호
-					break
+				# 월별 로테이션 체크
+				self._check_monthly_rotation()
 
-				operation, data = task
-
-				if operation == "insert":
-					self._execute_insert(data)
-				elif operation == "rotate":
-					self._perform_rotation()
-
-				self._write_queue.task_done()
-
-			except queue.Empty:
+			except Empty:
 				continue
 			except Exception as e:
-				self.logger.error(f"작업자 스레드 오류: {e}")
+				self.logger.error(f"Background worker error: {e}")
+				continue
+
+		self._close_connections()
+		self.logger.info("Background worker stopped.")
 
 
-	def _execute_insert(self, data: Dict[str, Any]):
-		"""실제 데이터 삽입 수행"""
-		try:
-			with self._lock:
-				# 메인 DB에 삽입
-				with sqlite3.connect(str(self.main_db_path)) as conn:
-					placeholders = ', '.join(['?' for _ in data.values()])
-					columns = ', '.join(data.keys())
-					sql = f"INSERT INTO logs ({columns}) VALUES ({placeholders})"
-					conn.execute(sql, list(data.values()))
-					conn.commit()
-
-				# 백업 DB에 삽입
-				with sqlite3.connect(str(self.backup_db_path)) as conn:
-					conn.execute(sql, list(data.values()))
-					conn.commit()
-
-		except Exception as e:
-			self.logger.error(f"데이터 삽입 실패: {e}")
-
-
-	def execute(self, sql: str, parameters: _Parameters = ..., /) -> Cursor:
-		"""실제 명령을 이중화하여 수행"""
-		try:
-			with self._lock:
-				# 메인 DB에 삽입
-				with sqlite3.connect(str(self.main_db_path)) as conn:
-					placeholders = ', '.join(['?' for _ in data.values()])
-					columns = ', '.join(data.keys())
-					sql = f"INSERT INTO logs ({columns}) VALUES ({placeholders})"
-					conn.execute(sql, list(data.values()))
-					conn.commit()
-
-				# 백업 DB에 삽입
-				with sqlite3.connect(str(self.backup_db_path)) as conn:
-					conn.execute(sql, list(data.values()))
-					conn.commit()
-
-		except Exception as e:
-			self.logger.error(f"데이터 삽입 실패: {e}")
-
-
-	def query(self, sql: str, parameters: _Parameters = ..., /) -> Cursor:
-		""" 조회는 메인 DB에서만 수행합니다. sqlite3.Connection.execute() 함수와 동일합니다.
-			sqlite3.Connection.execute() 함수에서 발생하는 오류가 그대로 전달됩니다.
-			외부에서 오류 처리가 필요합니다.
-		"""
-		with self._lock:
-			# 메인 DB에서 조회
-			with connect(str(self.main_db_path)) as conn:
-				cursor = conn.execute(sql, _Parameters or ())
-				return cursor.fetchall()
-
-
-	def insert_log(self, level: str, message: str, data: Optional[str] = None):
-		"""로그 데이터 삽입 (비동기)"""
-		log_data = {
-			'timestamp': datetime.now().isoformat(),
-			'level': level,
-			'message': message,
-			'data': data or ''
-		}
-
-		# 큐에 삽입 작업 추가
-		self._write_queue.put(("insert", log_data))
-
-	def insert_data(self, **kwargs):
-		"""일반 데이터 삽입 (비동기)"""
-		# 큐에 삽입 작업 추가
-		self._write_queue.put(("insert", kwargs))
-
-
-	def query(self, sql: str, params: Optional[tuple] = None) -> List[tuple]:
-		"""데이터 조회 (메인 DB에서만 조회)"""
-		try:
-			with sqlite3.connect(str(self.main_db_path)) as conn:
-				cursor = conn.execute(sql, params or ())
-				return cursor.fetchall()
-		except Exception as e:
-			self.logger.error(f"데이터 조회 실패: {e}")
-			return []
-
-
-	def query_dict(self, sql: str, params: Optional[tuple] = None) -> List[Dict[str, Any]]:
-		"""데이터 조회 (딕셔너리 형태로 반환)"""
-		try:
-			with sqlite3.connect(str(self.main_db_path)) as conn:
-				conn.row_factory = sqlite3.Row
-				cursor = conn.execute(sql, params or ())
-				return [dict(row) for row in cursor.fetchall()]
-		except Exception as e:
-			self.logger.error(f"데이터 조회 실패: {e}")
-			return []
-
-
-	def _check_rotation(self):
-		"""로테이션 필요성 체크"""
-		if self.retention_policy == RetentionPolicy.UNLIMITED:
+	def _check_monthly_rotation(self):
+		"""월별 로테이션 체크 및 실행: 10초에 한번씩 수행행"""
+		if (self.retention_period == RetentionPeriod.UNLIMITED):
 			return
 
-		now = datetime.now()
-
-		# 매월 1일에 로테이션 수행
-		if now.day == 1:
-			self._write_queue.put(("rotate", None))
-
-
-	def _perform_rotation(self):
-		"""데이터베이스 파일 로테이션 수행"""
-		try:
-			with self._lock:
-				now = datetime.now()
-				current_month = now.strftime("%Y%m")
-
-				# 이전 달 계산
-				if now.month == 1:
-					prev_month = f"{now.year - 1}12"
-				else:
-					prev_month = f"{now.year}{now.month - 1:02d}"
-
-				# 파일 경로들
-				current_backup = self.backup_folder / f"{self.db_name}-{current_month}.db"
-				prev_backup = self.backup_folder / f"{self.db_name}-{prev_month}.db"
-				prev_compressed = self.backup_folder / f"{self.db_name}-{prev_month}.db.gz"
-
-				self.logger.info("데이터베이스 로테이션 시작")
-
-				# 1. 메인 DB 파일 삭제
-				if self.main_db_path.exists():
-					self.main_db_path.unlink()
-					self.logger.info("메인 DB 파일 삭제 완료")
-
-				# 2. 이전 달 백업을 메인 DB로 복사 (존재하는 경우)
-				if prev_backup.exists():
-					shutil.copy2(prev_backup, self.main_db_path)
-					self.logger.info("이전 달 백업을 메인 DB로 복사 완료")
-				else:
-					# 백업이 없으면 새로 초기화
-					self._initialize_databases()
-
-				# 3. 현재 달 백업 파일 생성
-				if not current_backup.exists():
-					with sqlite3.connect(str(current_backup)) as conn:
-						conn.execute(self.table_schema)
-						conn.commit()
-					self.logger.info("현재 달 백업 파일 생성 완료")
-
-				# 4. 이전 달 백업 압축
-				if prev_backup.exists() and not prev_compressed.exists():
-					self._compress_file(prev_backup, prev_compressed)
-					prev_backup.unlink()  # 원본 삭제
-					self.logger.info("이전 달 백업 파일 압축 완료")
-
-				# 5. 보존 기간에 따른 오래된 파일 정리
-				self._cleanup_old_files()
-
-				self.logger.info("데이터베이스 로테이션 완료")
-
-		except Exception as e:
-			self.logger.error(f"로테이션 실패: {e}")
-
-
-	def _compress_file(self, source: Path, target: Path):
-		"""파일 gzip 압축"""
-		with open(source, 'rb') as f_in:
-			with gzip.open(target, 'wb') as f_out:
-				shutil.copyfileobj(f_in, f_out)
-
-
-	def _cleanup_old_files(self):
-		"""보존 기간에 따른 오래된 파일 정리"""
-		now = datetime.now()
-
-		# 보존 기간 계산
-		if self.retention_policy == RetentionPolicy.YEARLY:
-			cutoff_date = now - timedelta(days=365)
-		elif self.retention_policy == RetentionPolicy.MONTHLY:
-			cutoff_date = now - timedelta(days=30)
-		else:
+		if (self._prev_check_time < (time() - 10)):
 			return
 
-		# 백업 폴더의 압축 파일들 체크
-		pattern = f"{self.db_name}-*.db.gz"
-		for file_path in self.backup_folder.glob(pattern):
-			try:
-				# 파일명에서 날짜 추출
-				date_str = file_path.stem.split('-')[-1]  # YYYYMM
-				if len(date_str) == 6:
-					file_date = datetime.strptime(date_str, "%Y%m")
+		self._prev_check_time = time()
+		current_date = date.today()
+		current_month = current_date.strftime("%Y%m")
+		expected_backup_path = path.join(self.backup_folder, f"{self.db_name}-{current_month}.db")
 
-					if file_date < cutoff_date:
-						file_path.unlink()
-						self.logger.info(f"오래된 백업 파일 삭제: {file_path}")
-
-			except (ValueError, IndexError) as e:
-				self.logger.warning(f"파일 날짜 파싱 실패: {file_path}, {e}")
+		# 현재 백업 파일이 이번 달 파일이 아니면 로테이션 수행
+		if (self.backup_db_path != expected_backup_path):
+			self._perform_monthly_rotation(current_month)
 
 
-	def force_rotation(self):
-		"""강제 로테이션 수행"""
-		if self.retention_policy != RetentionPolicy.UNLIMITED:
-			self._write_queue.put(("rotate", None))
-			self.logger.info("강제 로테이션 요청됨")
+	def _cleanup_old_backups(self):
+		"""보존 기간에 따른 오래된 백업 파일 정리"""
+		if self.retention_period == RetentionPeriod.UNLIMITED:
+			return
 
-
-	def get_stats(self) -> Dict[str, Any]:
-		"""통계 정보 반환"""
-		stats = {}
+		current_date = date.today()
+		cutoff_months = 12 if (self.retention_period == RetentionPeriod.ONE_YEAR) else 1
 
 		try:
-			# 메인 DB 통계
-			with sqlite3.connect(str(self.main_db_path)) as conn:
-				cursor = conn.execute("SELECT COUNT(*) FROM logs")
-				stats['main_db_records'] = cursor.fetchone()[0]
+			for filename in listdir(self.backup_folder):
+				if (filename.startswith(f"{self.db_name}-") and filename.endswith(".db.gz")):
+					# 파일명에서 날짜 추출
+					date_part = filename.replace(f"{self.db_name}-", "").replace(".db.gz", "")
 
-			# 백업 DB 통계
-			with sqlite3.connect(str(self.backup_db_path)) as conn:
-				cursor = conn.execute("SELECT COUNT(*) FROM logs")
-				stats['backup_db_records'] = cursor.fetchone()[0]
+					try:
+						file_date = datetime.strptime(date_part, "%Y%m").date()
 
-			# 파일 크기 정보
-			stats['main_db_size'] = self.main_db_path.stat().st_size if self.main_db_path.exists() else 0
-			stats['backup_db_size'] = self.backup_db_path.stat().st_size if self.backup_db_path.exists() else 0
+						# 보존 기간 계산
+						months_diff = (current_date.year - file_date.year) * 12 + (current_date.month - file_date.month)
 
-			# 백업 파일 수
-			backup_files = list(self.backup_folder.glob(f"{self.db_name}-*.db*"))
-			stats['backup_files_count'] = len(backup_files)
+						if months_diff > cutoff_months:
+							file_path = path.join(self.backup_folder, filename)
+							remove(file_path)
+							self.logger.info(f"Removed old backup: {filename}")
 
-			# 큐 크기
-			stats['queue_size'] = self._write_queue.qsize()
+					except ValueError:
+						continue
 
 		except Exception as e:
-			self.logger.error(f"통계 정보 수집 실패: {e}")
-
-		return stats
+			self.logger.error(f"Failed to cleanup old backups: {e}")
 
 
-	def close(self):
-		"""리소스 정리 및 종료"""
-		self.logger.info("SqliteReplicationManager 종료 시작")
+	def _close_connections(self):
+		"""모든 연결 종료"""
+		with self._connection_lock:
+			if (hasattr(self._thread_local, 'main_conn')):
+				self._thread_local.main_conn.close()
+				delattr(self._thread_local, 'main_conn')
 
-		# 종료 신호 설정
-		self._shutdown_event.set()
+			if (hasattr(self._thread_local, 'backup_conn')):
+				self._thread_local.backup_conn.close()
+				delattr(self._thread_local, 'backup_conn')
 
-		# 큐의 모든 작업 완료 대기
-		self._write_queue.put(None)  # 종료 신호
+
+	def _compress_previous_backup(self):
+		"""이전 백업 파일 압축"""
+		if not path.exists(self.backup_db_path):
+			return
+
+		compressed_path = f"{self.backup_db_path}.gz"
 
 		try:
-			self._worker_thread.join(timeout=5.0)
-		except Exception as e:
-			self.logger.warning(f"작업자 스레드 종료 대기 중 오류: {e}")
+			with open(self.backup_db_path, 'rb') as f_in:
+				with gzip_open(compressed_path, 'wb') as f_out:
+					copyfileobj(f_in, f_out)
 
-		self.logger.info("SqliteReplicationManager 종료 완료")
+			self.logger.info(f"Backup compressed: {compressed_path}")
+
+		except Exception as e:
+			self.logger.error(f"Failed to compress backup: {e}")
 
 
 	def __enter__(self):
 		return self
 
 
+	def _execute_ddl(self, sql: str, parameters: Tuple):
+		"""실제 DDL 실행"""
+		main_conn, backup_conn = self._get_thread_connections()
+
+		try:
+			with self._lock:
+				# 메인 DB에 실행
+				main_conn.execute(sql, parameters)
+				main_conn.commit()
+
+				# 백업 DB에 실행
+				backup_conn.execute(sql, parameters)
+				backup_conn.commit()
+
+				self.logger.debug(f"DDL executed successfully: {sql[:50]}...")
+
+		except Exception as e:
+			self.logger.error(f"Failed to execute DDL: {e}")
+			# 롤백 시도
+			try:
+				main_conn.rollback()
+				backup_conn.rollback()
+			except:
+				pass
+			raise
+
+
 	def __exit__(self, exc_type, exc_val, exc_tb):
 		self.close()
+
+
+	def _get_thread_connections(self) -> Tuple[sqlite3.Connection, sqlite3.Connection]:
+		"""스레드별 연결 반환"""
+		if not hasattr(self._thread_local, 'main_conn'):
+			self._thread_local.main_conn = sqlite3.connect(
+				self.main_db_path,
+				timeout=30.0
+			)
+			self._thread_local.main_conn.execute("PRAGMA journal_mode=WAL")
+			self._thread_local.main_conn.execute("PRAGMA synchronous=NORMAL")
+
+		if not hasattr(self._thread_local, 'backup_conn'):
+			self._thread_local.backup_conn = sqlite3.connect(
+				self.backup_db_path,
+				timeout=30.0
+			)
+			self._thread_local.backup_conn.execute("PRAGMA journal_mode=WAL")
+			self._thread_local.backup_conn.execute("PRAGMA synchronous=NORMAL")
+
+		return self._thread_local.main_conn, self._thread_local.backup_conn
+
+
+	def _initialize_connections(self):
+		"""데이터베이스 연결 초기화"""
+		with self._connection_lock:
+			try:
+				self._get_thread_connections()
+				self._close_connections()
+
+				self.logger.info(f"Database connections initialized: {self.main_db_path}, {self.backup_db_path}")
+
+			except Exception as e:
+				self.logger.error(f"Failed to initialize connections: {e}")
+				raise
+
+
+	def _perform_monthly_rotation(self, current_month: str):
+		"""월별 로테이션 수행"""
+		with self._lock:
+			try:
+				self.logger.info("Starting monthly rotation...")
+
+				# 기존 연결 종료
+				self._close_connections()
+
+				# 이전 달 백업 파일 압축
+				self._compress_previous_backup()
+
+				# 메인 DB 파일 삭제
+				if path.exists(self.main_db_path):
+					remove(self.main_db_path)
+
+				# 이전 달 백업을 메인으로 복사
+				if path.exists(self.backup_db_path):
+					copy2(self.backup_db_path, self.main_db_path)
+
+				# 새로운 백업 파일 경로 설정
+				self.backup_db_path = path.join(self.backup_folder, f"{self.db_name}-{current_month}.db")
+
+				# 연결 재초기화
+				self._initialize_connections()
+
+				# 오래된 백업 파일 정리
+				self._cleanup_old_backups()
+
+				self.logger.info("Monthly rotation completed successfully")
+
+			except Exception as e:
+				self.logger.error(f"Monthly rotation failed: {e}")
+				raise
+
+
+	def close(self):
+		"""매니저 종료"""
+		self.logger.info("Shutting down SqliteReplicationManager...")
+
+		# 백그라운드 워커 종료
+		self._shutdown_event.set()
+
+		# 워커 스레드 종료 대기
+		if self._worker_thread.is_alive():
+			self._worker_thread.join(timeout=5.0)
+
+		# 큐의 남은 작업 처리
+		try:
+			while not self._execute_queue.empty():
+				task = self._execute_queue.get_nowait()
+				self._execute_ddl(task['sql'], task['parameters'])
+				self._execute_queue.task_done()
+		except Empty:
+			pass
+
+		# 연결 종료
+		self._close_connections()
+
+		self.logger.info("SqliteReplicationManager shutdown completed")
+
+
+	def execute(self, sql: str, parameters: Tuple = ()):
+		"""
+		DDL 실행 (백그라운드에서 처리)
+
+		Args:
+			sql: 실행할 SQL 문
+			parameters: SQL 파라미터
+		"""
+		task = {
+			'sql': sql,
+			'parameters': parameters,
+			'timestamp': datetime.now()
+		}
+
+		try:
+			self._execute_queue.put(task, timeout=self._execute_queue_timeout)
+			self.logger.debug(f"Queued DDL task: {sql[:50]}...")
+		except Full:
+			self.logger.error("Execute queue is full, task rejected")
+			raise RuntimeError("Execute queue is full")
+
+
+	@contextmanager
+	def query(self, sql: str) -> Generator[sqlite3.Cursor, None, None]:
+		"""
+		DML 실행 (메인 DB에서만 조회)
+
+		Args:
+			sql: 실행할 SQL 문
+
+		Yields:
+			sqlite3.Cursor: 쿼리 결과 커서
+		"""
+		main_conn, _ = self._get_thread_connections()
+		cursor = None
+
+		try:
+			with self._lock:
+				cursor = main_conn.execute(sql)
+				yield cursor
+
+		except Exception as e:
+			self.logger.error(f"Query execution failed: {e}")
+			raise
+		finally:
+			if cursor:
+				cursor.close()
 
 
 
 # 사용 예제
 if __name__ == "__main__":
-	from os import makedirs, path
 	from tempfile import TemporaryDirectory
-
+	from time import sleep
 
 	# 기본 테이블 스키마
 	table_schema = """
-	CREATE TABLE IF NOT EXISTS logs (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-		level TEXT,
-		message TEXT,
-		data TEXT
-	)
-	"""
-
+			CREATE TABLE IF NOT EXISTS logs (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				timestamp TEXT NOT NULL,
+				level TEXT NOT NULL,
+				message TEXT NOT NULL
+			)
+		"""
 
 	with TemporaryDirectory() as temp_dir:
-
-		# 기본 사용법
 		db_folder = path.join(temp_dir, "db")
 		backup_folder = path.join(temp_dir, "backup")
 		makedirs(db_folder, exist_ok=True)
 		makedirs(backup_folder, exist_ok=True)
 		print(f'{db_folder=} / {backup_folder=}')
+
+		# 매니저 생성
 		with SqliteReplicationManager(
-			db_name="application_log",
+			db_name="test_log",
 			db_folder=db_folder,
 			backup_folder=backup_folder,
-			retention_policy=RetentionPolicy.MONTHLY
+			retention_period=RetentionPeriod.ONE_MONTH
 		) as manager:
 
-			# 로그 데이터 삽입
-			manager.insert_log("INFO", "애플리케이션 시작", "{'version': '1.0.0'}")
-			manager.insert_log("ERROR", "데이터베이스 연결 실패", "{'error_code': 500}")
+			# 테이블 생성 (DDL)
+			manager.execute(table_schema)
 
-			# 일반 데이터 삽입
-			manager.insert_data(
-				level="DEBUG",
-				message="사용자 로그인",
-				data="{'user_id': 'user123'}"
+			# # 데이터 삽입 (DDL)
+			manager.execute(
+				"INSERT INTO logs (timestamp, level, message) VALUES (?, ?, ?)",
+				(datetime.now().isoformat(), "INFO", "Test log message")
 			)
 
-			# 잠시 대기 (비동기 처리 완료를 위해)
-			time.sleep(1)
+			sleep(0.1) # DDL이 적용되도록 약간의 지연 추가
 
-			# 데이터 조회
-			logs = manager.query("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 10")
-			print("최근 로그 10개:")
-			for log in logs:
-				print(log)
+			# # 데이터 조회 (DML)
+			with manager.query("SELECT * FROM logs ORDER BY id DESC LIMIT 10") as cursor:
+				results = cursor.fetchall()
+				for row in results:
+					print(row)
 
-			# 딕셔너리 형태로 조회
-			recent_logs = manager.query_dict(
-				"SELECT level, message, timestamp FROM logs WHERE level = ? ORDER BY timestamp DESC",
-				("ERROR",)
-			)
-			print("\n에러 로그:")
-			for log in recent_logs:
-				print(f"{log['timestamp']}: {log['message']}")
+			pass
 
-			# 통계 정보
-			stats = manager.get_stats()
-			print(f"\n통계 정보: {stats}")
-
-			# 강제 로테이션 테스트 (주의: 실제 환경에서는 신중히 사용)
-			# manager.force_rotation()
+		print(f'=====----------=====')
