@@ -38,22 +38,40 @@ class RetentionPeriod(Enum):
 
 class SqliteReplicationManager:
 	def __init__(self, db_name: str, db_folder: str, backup_folder: str,
-				retention_period: RetentionPeriod = RetentionPeriod.UNLIMITED):
+				table_schema: str=None,
+				retention_period: RetentionPeriod=RetentionPeriod.UNLIMITED
+				):
 		"""
 		SQLite 이중화 매니저 초기화
 
 		Args:
-			db_name: 데이터베이스 이름 (확장자 제외)
-			db_folder: 메인 DB 폴더 경로
-			backup_folder: 백업 DB 폴더 경로
-			retention_period: 데이터 보존 기간
+			db_name (str): 데이터베이스 이름 (확장자 제외)
+			db_folder (str): 메인 DB 폴더 경로
+			backup_folder (str): 백업 DB 폴더 경로
+			retention_period (RetentionPeriod): 데이터 보존 기간
+			table_shcema (str): 새로 생성된 DB의 기본 테이블 스키마
 		"""
-		self._execute_queue_timeout = 15
+		self._execute_queue_timeout = 2
 		self._prev_check_time = time()
+		self._main_conn = None
+		self._backup_conn = None
+
+		# 백그라운드 작업을 위한 큐와 스레드
+		self._execute_queue = Queue(maxsize=0)
+		self._shutdown_event = Event()
+		self._worker_thread = None
+
+		# 스레드 안전성을 위한 락
+		self._lock = RLock()
+		self._connection_lock = RLock()
+
+		# 연결 관리
+		self._thread_local = thread_local()
 
 		self.db_name = db_name
 		self.db_folder = db_folder
 		self.backup_folder = backup_folder
+		self.table_schema = table_schema
 		self.retention_period = retention_period
 
 		# 폴더 생성
@@ -62,31 +80,27 @@ class SqliteReplicationManager:
 
 		# 파일 경로 설정
 		self.main_db_path = path.join(db_folder, f"{db_name}.db")
-		current_month = datetime.now().strftime("%Y%m")
+		current_month = date.today().strftime("%Y%m")
 		self.backup_db_path = path.join(backup_folder, f"{db_name}-{current_month}.db")
-
-		# 스레드 안전성을 위한 락
-		self._lock = RLock()
-		self._connection_lock = RLock()
 
 		# 로깅 설정
 		logging.basicConfig(level=logging.INFO)
 		self.logger = logging.getLogger(__name__)
 
-		# 백그라운드 작업을 위한 큐와 스레드
-		self._execute_queue = Queue()
-		self._shutdown_event = Event()
-		self._worker_thread = Thread(target=self._background_worker, daemon=True)
-		self._worker_thread.start()
-
-		# 연결 관리
-		self._thread_local = thread_local()
-
 		# 초기 연결 설정
 		self._initialize_connections()
+		self._start_background_worker()
 
 		# 월별 로테이션 체크
 		# self._check_monthly_rotation()
+
+
+	def __enter__(self):
+		return self
+
+
+	def __exit__(self, exc_type, exc_val, exc_tb):
+		self.close()
 
 
 	def _background_worker(self):
@@ -99,11 +113,8 @@ class SqliteReplicationManager:
 				task = self._execute_queue.get(timeout=1.0)
 				self._execute_ddl(task['sql'], task['parameters']) # DDL 실행
 				self._execute_queue.task_done()
-
-				# 월별 로테이션 체크
-				self._check_monthly_rotation()
-
 			except Empty:
+				self._check_monthly_rotation()
 				continue
 			except Exception as e:
 				self.logger.error(f"Background worker error: {e}")
@@ -118,10 +129,11 @@ class SqliteReplicationManager:
 		if (self.retention_period == RetentionPeriod.UNLIMITED):
 			return
 
-		if (self._prev_check_time < (time() - 10)):
+		current_Time = time()
+		if (self._prev_check_time > (current_Time - 10)):
 			return
 
-		self._prev_check_time = time()
+		self._prev_check_time = current_Time
 		current_date = date.today()
 		current_month = current_date.strftime("%Y%m")
 		expected_backup_path = path.join(self.backup_folder, f"{self.db_name}-{current_month}.db")
@@ -174,6 +186,14 @@ class SqliteReplicationManager:
 				self._thread_local.backup_conn.close()
 				delattr(self._thread_local, 'backup_conn')
 
+			if (self._main_conn != None):
+				self._main_conn.close()
+				self._main_conn = None
+
+			if (self._backup_conn != None):
+				self._backup_conn.close()
+				self._backup_conn = None
+
 
 	def _compress_previous_backup(self):
 		"""이전 백업 파일 압축"""
@@ -191,10 +211,6 @@ class SqliteReplicationManager:
 
 		except Exception as e:
 			self.logger.error(f"Failed to compress backup: {e}")
-
-
-	def __enter__(self):
-		return self
 
 
 	def _execute_ddl(self, sql: str, parameters: Tuple):
@@ -224,10 +240,6 @@ class SqliteReplicationManager:
 			raise
 
 
-	def __exit__(self, exc_type, exc_val, exc_tb):
-		self.close()
-
-
 	def _get_thread_connections(self) -> Tuple[sqlite3.Connection, sqlite3.Connection]:
 		"""스레드별 연결 반환"""
 		if not hasattr(self._thread_local, 'main_conn'):
@@ -255,6 +267,20 @@ class SqliteReplicationManager:
 			try:
 				self._get_thread_connections()
 				self._close_connections()
+
+				if (self._main_conn == None):
+					self._main_conn = sqlite3.connect(self.main_db_path, check_same_thread=False, timeout=30.0)
+					self._main_conn.execute("PRAGMA journal_mode=WAL")
+					self._main_conn.execute("PRAGMA synchronous=NORMAL")
+					if (self.table_schema != None):
+						self.execute(self.table_schema)
+
+				if (self._backup_conn == None):
+					self._backup_conn = sqlite3.connect(self.backup_db_path, check_same_thread=False, timeout=30.0)
+					self._backup_conn.execute("PRAGMA journal_mode=WAL")
+					self._backup_conn.execute("PRAGMA synchronous=NORMAL")
+					if (self.table_schema != None):
+						self.execute(self.table_schema)
 
 				self.logger.info(f"Database connections initialized: {self.main_db_path}, {self.backup_db_path}")
 
@@ -286,8 +312,8 @@ class SqliteReplicationManager:
 				# 새로운 백업 파일 경로 설정
 				self.backup_db_path = path.join(self.backup_folder, f"{self.db_name}-{current_month}.db")
 
-				# 연결 재초기화
 				self._initialize_connections()
+				self._start_background_worker()
 
 				# 오래된 백업 파일 정리
 				self._cleanup_old_backups()
@@ -299,16 +325,29 @@ class SqliteReplicationManager:
 				raise
 
 
-	def close(self):
-		"""매니저 종료"""
-		self.logger.info("Shutting down SqliteReplicationManager...")
+	def _start_background_worker(self):
+		"""백그라운드 워커 시작"""
+		if (self._worker_thread == None):
+			self._worker_thread = Thread(target=self._background_worker, daemon=True)
+			self._worker_thread.start()
 
-		# 백그라운드 워커 종료
+
+	def _stop_background_worker(self):
+		"""백그라운드 워커 종료"""
 		self._shutdown_event.set()
 
 		# 워커 스레드 종료 대기
 		if self._worker_thread.is_alive():
 			self._worker_thread.join(timeout=5.0)
+
+		self._worker_thread == None
+
+
+	def close(self):
+		"""매니저 종료"""
+		self.logger.info("Shutting down SqliteReplicationManager...")
+
+		self._stop_background_worker()
 
 		# 큐의 남은 작업 처리
 		try:
@@ -358,12 +397,14 @@ class SqliteReplicationManager:
 		Yields:
 			sqlite3.Cursor: 쿼리 결과 커서
 		"""
-		main_conn, _ = self._get_thread_connections()
+		if (self._main_conn == None):
+			raise Exception('Main db not connected.')
+
 		cursor = None
 
 		try:
 			with self._lock:
-				cursor = main_conn.execute(sql)
+				cursor = self._main_conn.execute(sql)
 				yield cursor
 
 		except Exception as e:
@@ -381,8 +422,8 @@ if __name__ == "__main__":
 	from time import sleep
 
 	# 기본 테이블 스키마
-	table_schema = """
-			CREATE TABLE IF NOT EXISTS logs (
+	table_schema2 = """
+			CREATE TABLE IF NOT EXISTS LOGS (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
 				timestamp TEXT NOT NULL,
 				level TEXT NOT NULL,
@@ -402,22 +443,21 @@ if __name__ == "__main__":
 			db_name="test_log",
 			db_folder=db_folder,
 			backup_folder=backup_folder,
+			table_schema=table_schema2,
 			retention_period=RetentionPeriod.ONE_MONTH
 		) as manager:
-
-			# 테이블 생성 (DDL)
-			manager.execute(table_schema)
+			manager.logger.setLevel(10)
 
 			# # 데이터 삽입 (DDL)
 			manager.execute(
-				"INSERT INTO logs (timestamp, level, message) VALUES (?, ?, ?)",
+				"INSERT INTO LOGS (timestamp, level, message) VALUES (?, ?, ?)",
 				(datetime.now().isoformat(), "INFO", "Test log message")
 			)
 
 			sleep(0.1) # DDL이 적용되도록 약간의 지연 추가
 
 			# # 데이터 조회 (DML)
-			with manager.query("SELECT * FROM logs ORDER BY id DESC LIMIT 10") as cursor:
+			with manager.query("SELECT * FROM LOGS ORDER BY id DESC LIMIT 10") as cursor:
 				results = cursor.fetchall()
 				for row in results:
 					print(row)
