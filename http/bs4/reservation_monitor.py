@@ -6,7 +6,8 @@
 # Original Packages
 from datetime import datetime, timedelta
 from locale import LC_TIME, setlocale
-from typing import List, Dict, Tuple, Optional
+from time import sleep
+from typing import List, Dict, Final, Tuple, Optional
 
 import re
 
@@ -27,6 +28,34 @@ from lib.json_util import load_json_conf
 
 
 
+class ReservationMonitorKey:
+	"""객실 예약 모니터링 관련 각종 키 상수 문자열 정의 클래스"""
+	LOG_LEVEL: Final							= 'log_level'
+	FILTER_WEEKDAY: Final						= 'filter_weekday'
+	TARGET: Final								= 'target'
+	MONITOR_NEXT_MONTH: Final					= 'monitor_next_month'
+	MONITORING_CYCLE: Final						= 'monitoring_cycle'
+	APP_ID: Final								= 'app_id'
+	APP_NAME: Final								= 'app_name'
+	REST_API_KEY: Final							= 'rest_api_key'
+	TOKEN_KEY: Final							= 'token_key'
+
+
+
+class ReservationMonitorDef:
+	"""객실 예약 모니터링 관련 각종 기본값 상수 정의 클래스"""
+	LOG_LEVEL: Final							= 20
+	FILTER_WEEKDAY: Final						= [0, 1, 2, 3, 4, 5, 6]
+	TARGET: Final								= []
+	MONITOR_NEXT_MONTH: Final					= 0
+	MONITORING_CYCLE: Final						= 600
+	APP_ID: Final								= ''
+	APP_NAME: Final								= ''
+	REST_API_KEY: Final							= ''
+	TOKEN_KEY: Final							= ''
+
+
+
 class ReservationMonitor:
 	"""
 	객실 예약정보 모니터링 클래스
@@ -42,6 +71,7 @@ class ReservationMonitor:
 				"log_level":20
 				, "filter_weekday":[4,5]
 				, "monitor_next_month":1
+				, "monitoring_cycle":600
 				, "target":[
 					["https://target1.url/cal/%Y/%m", 1]
 					, ["https://target2.url/cal/%Y/%m", 0]
@@ -57,12 +87,18 @@ class ReservationMonitor:
 		"""
 		self.config_path = config_path
 		self.config = None
-		self.filter_weekday = [0, 1, 2, 3, 4, 5, 6]  # 기본값: 모든 요일
-		self.is_monitor_next_month = False # 다음달 객실 예약정보 모니터링 여부
-		self.target_urls = []
+
+		self.log_level				= ReservationMonitorDef.LOG_LEVEL
+		self.filter_weekday			= ReservationMonitorDef.FILTER_WEEKDAY
+		self.is_monitor_next_month	= ReservationMonitorDef.MONITOR_NEXT_MONTH == 1
+		self.minitoring_cycle		= ReservationMonitorDef.MONITORING_CYCLE
+		self.target_urls			= ReservationMonitorDef.TARGET
+		self.app_id					= ReservationMonitorDef.APP_ID
+		self.app_name				= ReservationMonitorDef.APP_NAME
+		self.rest_api_key			= ReservationMonitorDef.REST_API_KEY
+		self.token_key				= ReservationMonitorDef.TOKEN_KEY
 
 		setlocale(LC_TIME, 'ko_KR.UTF-8')
-		self._load_config()
 
 
 	def _extract_available_rooms(self, cell) -> List[str]:
@@ -133,9 +169,15 @@ class ReservationMonitor:
 				print(f'conf load fail!: {err_msg}')
 				return False
 
-			self.filter_weekday = self.config.get('filter_weekday', self.filter_weekday)
-			self.target_urls = self.config.get('target', [])
-			self.is_monitor_next_month = self.config.get('monitor_next_month', 0) == 1
+			self.log_level				= self.config.get(ReservationMonitorKey.LOG_LEVEL,			ReservationMonitorDef.LOG_LEVEL)
+			self.filter_weekday			= self.config.get(ReservationMonitorKey.FILTER_WEEKDAY,		ReservationMonitorDef.FILTER_WEEKDAY)
+			self.is_monitor_next_month	= self.config.get(ReservationMonitorKey.MONITOR_NEXT_MONTH,	ReservationMonitorDef.MONITOR_NEXT_MONTH) == 1
+			self.minitoring_cycle		= self.config.get(ReservationMonitorKey.MONITORING_CYCLE,	ReservationMonitorDef.MONITORING_CYCLE)
+			self.target_urls			= self.config.get(ReservationMonitorKey.TARGET,				ReservationMonitorDef.TARGET)
+			self.app_id					= self.config.get(ReservationMonitorKey.APP_ID,				ReservationMonitorDef.APP_ID)
+			self.app_name				= self.config.get(ReservationMonitorKey.APP_NAME,			ReservationMonitorDef.APP_NAME)
+			self.rest_api_key			= self.config.get(ReservationMonitorKey.REST_API_KEY,		ReservationMonitorDef.REST_API_KEY)
+			self.token_key				= self.config.get(ReservationMonitorKey.TOKEN_KEY,			ReservationMonitorDef.TOKEN_KEY)
 			return True
 		except Exception as e:
 			print(f'Config load error: {e}')
@@ -258,9 +300,6 @@ class ReservationMonitor:
 			if (self.is_monitor_next_month):
 				next_month_url = next_month.strftime(url)
 				self.monitor_url(results, next_month_url)
-				
-		# 결과 출력
-		self.display_results(results)
 
 		return results
 
@@ -336,13 +375,18 @@ class ReservationMonitor:
 		if self.config is None:
 			return -2
 
-		try:
-			result = self.monitor_all_targets()
-			return result
-		except Exception as e:
-			print(f"모니터링 중 오류 발생: {e}")
-			return -1
+		while (True):
+			try:
+				self._load_config() # 모니터링 주기별로 설정을 다시 읽어들임
+				results = self.monitor_all_targets()
 
+				# 결과 출력
+				self.display_results(results)
+			except Exception as e:
+				print(f"모니터링 중 오류 발생: {e}")
+				return -1
+
+			sleep(self.minitoring_cycle)
 
 
 def main() -> int:
