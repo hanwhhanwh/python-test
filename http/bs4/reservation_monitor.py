@@ -15,6 +15,8 @@ import re
 
 # Third-party Packages
 from bs4 import BeautifulSoup
+from PyKakao import Message
+
 import requests
 
 
@@ -156,6 +158,22 @@ class ReservationMonitor:
 		return now.year, now.month
 
 
+	def _init_kakao_msg(self) -> bool:
+		"""
+		Kakao 메시지 보내기 위한 초기화
+
+		Returns:
+			bool: 초기화 성공 여부
+		"""
+		# 메시지 API 인스턴스 생성
+		self.MSG = Message(service_key = self.rest_api_key)
+
+		# 액세스 토큰 설정
+		self.MSG.set_access_token(self.token_key)
+
+		pass
+
+
 	def _load_config(self) -> bool:
 		"""
 		설정 파일 로드
@@ -229,6 +247,44 @@ class ReservationMonitor:
 		return None
 
 
+	def _send_kakao_message_to_me(self, reservation_info: dict) -> None:
+		"""
+		나에게 카카오 메시지 보내기
+
+		Args:
+			reservation_info (dict): 예약 가능한 날짜 정보 목록
+		"""
+
+		if (len(reservation_info) == 0):
+			return
+
+		message_type = "text" # 메시지 유형 - 텍스트
+		for url, reservation_list in reservation_info.items():
+
+			message = ''
+			for date_info in reservation_list:
+				message += (f"\n📅 {date_info['date']} ({date_info['weekday']})")
+				for room in date_info['available_rooms']:
+					message += (f"\n   • {room}")
+
+			if (message == ''):
+				continue
+
+			text = message
+			link = {
+				"web_url": url,
+				"mobile_web_url": url,
+			}
+			button_title = "바로 확인" # 버튼 타이틀
+
+			self.MSG.send_message_to_me(
+				message_type=message_type, 
+				text=text,
+				link=link,
+				button_title=button_title,
+			)
+
+
 	def display_results(self, reservation_info: dict) -> None:
 		"""
 		결과를 보기 좋게 출력합니다.
@@ -236,6 +292,7 @@ class ReservationMonitor:
 		Args:
 			reservation_info (dict): 예약 가능한 날짜 정보 목록
 		"""
+		print(f"{datetime.now().isoformat()=}")
 		if (len(reservation_info) == 0):
 			print("예약 가능한 날짜가 없습니다.")
 			return
@@ -370,18 +427,25 @@ class ReservationMonitor:
 		Returns:
 			int: 실행 결과 코드 (0: 성공, -1: 데이터 가져오기 실패, -2: 설정 로드 실패)
 		"""
-		print("객실 예약 정보 분석 중...")
-
+		self._load_config() # 모니터링 주기별로 설정을 다시 읽어들임
 		if self.config is None:
 			return -2
+
+		self._init_kakao_msg()
+
+		print("객실 예약 정보 분석 중...")
 
 		while (True):
 			try:
 				self._load_config() # 모니터링 주기별로 설정을 다시 읽어들임
+				if self.config is None:
+					return -2
+
 				results = self.monitor_all_targets()
 
 				# 결과 출력
 				self.display_results(results)
+				self._send_kakao_message_to_me(results)
 			except Exception as e:
 				print(f"모니터링 중 오류 발생: {e}")
 				return -1
