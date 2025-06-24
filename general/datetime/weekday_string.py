@@ -15,7 +15,7 @@ print(dt.strftime('%A'))  # Wednesday
 
 # 일본어
 setlocale(LC_TIME, 'ja_JP.UTF-8')
-print(dt.strftime('%A'))  # 水曜日
+print(dt.strftime('%A').encode('utf-8', 'surrogateescape').decode('utf-8', 'surrogateescape'))  # 水曜日
 
 # 독일어
 setlocale(LC_TIME, 'de_DE.UTF-8')
@@ -23,4 +23,4 @@ print(dt.strftime('%A'))  # Mittwoch
 
 # 한국어(지원 OS 한정)
 setlocale(LC_TIME, 'ko_KR.UTF-8')
-print(dt.strftime('%A'))  # 수요일
+print(dt.strftime('%A').encode('utf-8', 'surrogateescape').decode('utf-8', 'surrogateescape'))  # 수요일
