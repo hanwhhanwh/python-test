@@ -6,17 +6,18 @@
 	"configurations": [
 		{
 			"name": "Python: Current File",
-			"type": "python",
+			"type": "debugpy",
 			"request": "launch",
-			"program": "${file}",
-			"justMyCode": false,
-			"console": "integratedTerminal",
-			"args": ["https://www.youtube.com/watch?v=dmfDYYBeEbc", "--download_path", "C:/temp/youtube"],
-			"cwd": "${fileDirname}"
+			"program": "${relativeFile}",
+			// "justMyCode": false,
+			"console":"integratedTerminal",
+			// "args": ["https://www.youtube.com/watch?v=dmfDYYBeEbc", "--download_path", "C:/temp/youtube"],
+			// "cwd": "${fileDirname}"
+			"cwd": "${workspaceFolder}"
 		},
 		{
 			"name": "Python: Flask",
-			"type": "python",
+			"type": "debugpy",
 			"request": "launch",
 			"module": "flask",
 			"env": {
