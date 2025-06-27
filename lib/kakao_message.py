@@ -7,7 +7,7 @@
 # Original Packages
 from json import dumps
 from time import time
-from typing import Final
+from typing import Final, Tuple
 
 
 
@@ -21,7 +21,7 @@ class KakaoMessageKey:
 	ACCESS_TOKEN: Final				= 'access_token'
 	ACCESS_TOKEN_EXPIRE: Final		= 'expires_in'
 	REFRESH_TOKEN: Final			= 'refresh_token'
-	REFRESH_TOKEN_EXPIRE: Final		= 'refresh_token_expires_in'
+	REFRESH_TOKEN_EXPIRE_AT: Final	= 'refresh_token_expires_at'
 	URL_AUTH_TOKEN: Final			= 'https://kauth.kakao.com/oauth/token'
 	URL_MESSAGE_ME: Final			= "https://kapi.kakao.com/v2/api/talk/memo/default/send"
 	URL_MESSAGE_FRIEND :Final		= "https://kapi.kakao.com/v1/api/talk/friends/message/default/send"
@@ -98,7 +98,7 @@ class KakaoMessage:
 		self.access_token = auto_token_json.get(KakaoMessageKey.ACCESS_TOKEN, '')
 		self.access_token_expire_time = time() + auto_token_json.get(KakaoMessageKey.ACCESS_TOKEN_EXPIRE, 21600)
 		self.refresh_token = auto_token_json.get(KakaoMessageKey.REFRESH_TOKEN, '')
-		self.refresh_token_expire_time = time() + auto_token_json.get(KakaoMessageKey.REFRESH_TOKEN_EXPIRE, 5184000)
+		self.refresh_token_expires_at = time() + auto_token_json.get(KakaoMessageKey.REFRESH_TOKEN_EXPIRE_AT, 5184000)
 		return auto_token_json
 
 
@@ -137,6 +137,29 @@ class KakaoMessage:
 		code = self.get_code_by_redirected_url(url)
 		auth_token = self.get_auth_token_json(code)
 		return auth_token.get('access_token')
+
+
+	def get_remaining_time4token(self) -> Tuple[float, float]:
+		"""카카오 발급된 토큰에 대한 남은 만료 시간 (초)
+
+		Args:
+			url (str): 	카카오 인증코드 발급 URL 접속 후 리다이렉트된 URL
+
+		Returns:
+			tuple: refresh_token 만료 남은 시간, access_token 만료 남은 시간
+		"""
+		current_time = time()
+		return (self.refresh_token_expires_at - current_time, self.access_token_expire_time - current_time)
+
+
+	def refresh_access_token(self) -> bool:
+		"""access_token을 refresh_token을 이용하여 새로 갱신
+
+		Returns:
+			bool: 토큰 갱신 성공 여부
+		"""
+		current_time = time()
+		return (self.refresh_token_expires_at - current_time, self.access_token_expire_time - current_time)
 
 
 	def set_access_token(self, access_token):
