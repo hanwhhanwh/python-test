@@ -19,7 +19,7 @@ from requests import get as request_get, post as request_post
 
 class KakaoMessageKey:
 	ACCESS_TOKEN: Final				= 'access_token'
-	ACCESS_TOKEN_EXPIRE: Final		= 'expires_in'
+	ACCESS_TOKEN_EXPIRES_AT: Final	= 'expires_in'
 	REFRESH_TOKEN: Final			= 'refresh_token'
 	REFRESH_TOKEN_EXPIRE_AT: Final	= 'refresh_token_expires_at'
 	URL_AUTH_TOKEN: Final			= 'https://kauth.kakao.com/oauth/token'
@@ -38,6 +38,10 @@ class KakaoMessage:
 	"""
 
 	def __init__(self, service_key=None, redirect_uri="https://localhost:5000", scope="talk_message"):
+		self.access_token = ''
+		self.access_token_expires_at = 0
+		self.refresh_token = ''
+		self.refresh_token_expires_at = 0
 		self.service_key = service_key
 		self.redirect_uri = redirect_uri
 		self.scope = scope
@@ -96,7 +100,7 @@ class KakaoMessage:
 		response = request_post(url, data=data)
 		auto_token_json = response.json()
 		self.access_token = auto_token_json.get(KakaoMessageKey.ACCESS_TOKEN, '')
-		self.access_token_expire_time = time() + auto_token_json.get(KakaoMessageKey.ACCESS_TOKEN_EXPIRE, 21600)
+		self.access_token_expires_at = time() + auto_token_json.get(KakaoMessageKey.ACCESS_TOKEN_EXPIRES_AT, 21600)
 		self.refresh_token = auto_token_json.get(KakaoMessageKey.REFRESH_TOKEN, '')
 		self.refresh_token_expires_at = time() + auto_token_json.get(KakaoMessageKey.REFRESH_TOKEN_EXPIRE_AT, 5184000)
 		return auto_token_json
@@ -149,7 +153,7 @@ class KakaoMessage:
 			tuple: refresh_token 만료 남은 시간, access_token 만료 남은 시간
 		"""
 		current_time = time()
-		return (self.refresh_token_expires_at - current_time, self.access_token_expire_time - current_time)
+		return (self.refresh_token_expires_at - current_time, self.access_token_expires_at - current_time)
 
 
 	def refresh_access_token(self) -> bool:
@@ -158,8 +162,20 @@ class KakaoMessage:
 		Returns:
 			bool: 토큰 갱신 성공 여부
 		"""
-		current_time = time()
-		return (self.refresh_token_expires_at - current_time, self.access_token_expire_time - current_time)
+		headers = { "Content-Type": "application/x-www-form-urlencoded" }
+		url = KakaoMessageKey.URL_AUTH_TOKEN
+		data = {
+			"grant_type": "refresh_token",
+			"client_id": self.service_key,
+			"refresh_token": self.refresh_token,
+		}
+		response = request_post(url, headers=headers, data=data)
+		response.raise_for_status()
+		json_result = response.json()
+		self.access_token = json_result.get(KakaoMessageKey.ACCESS_TOKEN, '')
+		self.access_token_expires_at = time() + json_result.get(KakaoMessageKey.ACCESS_TOKEN_EXPIRES_AT, 21600)
+		self.set_access_token(self.access_token)
+		return True
 
 
 	def set_access_token(self, access_token):
