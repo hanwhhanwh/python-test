@@ -6,7 +6,7 @@
 # Original Packages
 from datetime import datetime, timedelta
 from locale import LC_TIME, setlocale
-from time import sleep
+from time import sleep, time
 from typing import List, Dict, Final, Tuple, Optional
 
 import re
@@ -15,18 +15,24 @@ import re
 
 # Third-party Packages
 from bs4 import BeautifulSoup
-from PyKakao import Message
+# from PyKakao import Message
 
 import requests
 
 
 
-# User's Package
+# User's Package 들을 포함시키기 위한 sys.path에 프로젝트 폴더 추가하기
 from os import getcwd
 from sys import path as sys_path
-sys_path.append(getcwd())
+project_folder = getcwd()
+# print(f'{project_folder=}')
+if (not project_folder in sys_path):
+	sys_path.append(str(project_folder))
 
+
+# User's Package
 from lib.json_util import load_json_conf
+from lib.kakao_message import KakaoMessage, KakaoMessageKey
 
 
 
@@ -34,13 +40,15 @@ class ReservationMonitorKey:
 	"""객실 예약 모니터링 관련 각종 키 상수 문자열 정의 클래스"""
 	LOG_LEVEL: Final							= 'log_level'
 	FILTER_WEEKDAY: Final						= 'filter_weekday'
+	EXCLUDE_ROOM: Final							= 'exclude_room'
 	TARGET: Final								= 'target'
 	MONITOR_NEXT_MONTH: Final					= 'monitor_next_month'
 	MONITORING_CYCLE: Final						= 'monitoring_cycle'
 	APP_ID: Final								= 'app_id'
 	APP_NAME: Final								= 'app_name'
 	REST_API_KEY: Final							= 'rest_api_key'
-	TOKEN_KEY: Final							= 'token_key'
+	REFRESH_TOKEN: Final						= 'refresh_token'
+	REFRESH_TOKEN_EXPIRES_AT: Final				= 'refresh_token_expires_at'
 
 
 
@@ -48,13 +56,14 @@ class ReservationMonitorDef:
 	"""객실 예약 모니터링 관련 각종 기본값 상수 정의 클래스"""
 	LOG_LEVEL: Final							= 20
 	FILTER_WEEKDAY: Final						= [0, 1, 2, 3, 4, 5, 6]
+	EXCLUDE_ROOM: Final							= ["^우"]
 	TARGET: Final								= []
 	MONITOR_NEXT_MONTH: Final					= 0
 	MONITORING_CYCLE: Final						= 600
 	APP_ID: Final								= ''
 	APP_NAME: Final								= ''
 	REST_API_KEY: Final							= ''
-	TOKEN_KEY: Final							= ''
+	REFRESH_TOKEN: Final							= ''
 
 
 
@@ -82,6 +91,7 @@ class ReservationMonitor:
 				, "app_name":"my_app-name"
 				, "rest_api_key":"my_app-rest_api_key"
 				, "token_key":"my_app-token_key"
+				, "refresh_token_expires_at":1756198598
 			}
 
 		Args:
@@ -92,13 +102,14 @@ class ReservationMonitor:
 
 		self.log_level				= ReservationMonitorDef.LOG_LEVEL
 		self.filter_weekday			= ReservationMonitorDef.FILTER_WEEKDAY
+		self.exclude_rooms			= ReservationMonitorDef.EXCLUDE_ROOM
 		self.is_monitor_next_month	= ReservationMonitorDef.MONITOR_NEXT_MONTH == 1
 		self.minitoring_cycle		= ReservationMonitorDef.MONITORING_CYCLE
 		self.target_urls			= ReservationMonitorDef.TARGET
 		self.app_id					= ReservationMonitorDef.APP_ID
 		self.app_name				= ReservationMonitorDef.APP_NAME
 		self.rest_api_key			= ReservationMonitorDef.REST_API_KEY
-		self.token_key				= ReservationMonitorDef.TOKEN_KEY
+		self.refresh_token				= ReservationMonitorDef.REFRESH_TOKEN
 
 		setlocale(LC_TIME, 'ko_KR.UTF-8')
 
@@ -119,12 +130,16 @@ class ReservationMonitor:
 		if room_types:
 			room_items = room_types.find_all('li')
 
+			compiled_exclude_rooms = [re.compile(p) for p in self.exclude_rooms]
+
 			for room in room_items:
 				# 예약 가능한 객실 찾기 (resY 클래스)
 				if room.find('span', class_='resY'):
 					room_link = room.find('a')
 					if room_link:
 						room_text = room_link.get_text().strip()
+						if any(p.match(room_text) for p in compiled_exclude_rooms):
+							continue
 						# 대괄호 안의 숫자 추출 (가능한 객실 수)
 						bracket_match = re.search(r'\[(\d+)\]', room.get_text())
 						available_count = bracket_match.group(1) if bracket_match else "N/A"
@@ -166,12 +181,9 @@ class ReservationMonitor:
 			bool: 초기화 성공 여부
 		"""
 		# 메시지 API 인스턴스 생성
-		self.MSG = Message(service_key = self.rest_api_key)
-
-		# 액세스 토큰 설정
-		self.MSG.set_access_token(self.token_key)
-
-		pass
+		self.MSG = KakaoMessage(service_key=self.rest_api_key)
+		self.MSG.refresh_token = self.refresh_token
+		self.MSG.refresh_token_expires_at = self.refresh_token_expires_at
 
 
 	def _load_config(self) -> bool:
@@ -189,13 +201,15 @@ class ReservationMonitor:
 
 			self.log_level				= self.config.get(ReservationMonitorKey.LOG_LEVEL,			ReservationMonitorDef.LOG_LEVEL)
 			self.filter_weekday			= self.config.get(ReservationMonitorKey.FILTER_WEEKDAY,		ReservationMonitorDef.FILTER_WEEKDAY)
+			self.exclude_rooms			= self.config.get(ReservationMonitorKey.EXCLUDE_ROOM,		ReservationMonitorDef.EXCLUDE_ROOM)
 			self.is_monitor_next_month	= self.config.get(ReservationMonitorKey.MONITOR_NEXT_MONTH,	ReservationMonitorDef.MONITOR_NEXT_MONTH) == 1
 			self.minitoring_cycle		= self.config.get(ReservationMonitorKey.MONITORING_CYCLE,	ReservationMonitorDef.MONITORING_CYCLE)
 			self.target_urls			= self.config.get(ReservationMonitorKey.TARGET,				ReservationMonitorDef.TARGET)
 			self.app_id					= self.config.get(ReservationMonitorKey.APP_ID,				ReservationMonitorDef.APP_ID)
 			self.app_name				= self.config.get(ReservationMonitorKey.APP_NAME,			ReservationMonitorDef.APP_NAME)
 			self.rest_api_key			= self.config.get(ReservationMonitorKey.REST_API_KEY,		ReservationMonitorDef.REST_API_KEY)
-			self.token_key				= self.config.get(ReservationMonitorKey.TOKEN_KEY,			ReservationMonitorDef.TOKEN_KEY)
+			self.refresh_token			= self.config.get(ReservationMonitorKey.REFRESH_TOKEN,		ReservationMonitorDef.REFRESH_TOKEN)
+			self.refresh_token_expires_at = self.config.get(ReservationMonitorKey.REFRESH_TOKEN_EXPIRES_AT, 0)
 			return True
 		except Exception as e:
 			print(f'Config load error: {e}')
@@ -440,6 +454,12 @@ class ReservationMonitor:
 				self._load_config() # 모니터링 주기별로 설정을 다시 읽어들임
 				if self.config is None:
 					return -2
+
+				self.MSG.refresh_token = self.refresh_token
+				self.MSG.refresh_token_expires_at = self.refresh_token_expires_at
+				current_time = time()
+				if ((current_time + 60) > self.MSG.access_token_expires_at):
+					self.MSG.refresh_access_token()
 
 				results = self.monitor_all_targets()
 
