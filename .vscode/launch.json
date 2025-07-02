@@ -6,17 +6,17 @@
 	"configurations": [
 		{
 			"name": "Python: Current File",
-			"type": "python",
+			"type": "debugpy",
 			"request": "launch",
-			"program": "${file}",
+			"cwd": "${workspaceFolder}",
+			"program": "${relativeFile}",
 			"justMyCode": false,
 			"console": "integratedTerminal",
 			"args": ["https://www.youtube.com/watch?v=dmfDYYBeEbc", "--download_path", "C:/temp/youtube"],
-			"cwd": "${fileDirname}"
 		},
 		{
 			"name": "Python: Flask",
-			"type": "python",
+			"type": "debugpy",
 			"request": "launch",
 			"module": "flask",
 			"env": {
