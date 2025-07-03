@@ -69,7 +69,8 @@ class BaseParser(ABC):
 				if isinstance(data, bytes):
 					self._buf += data
 					packet = self.parse()
-					await self.packet_queue.put(packet)
+					if (packet):
+						await self.packet_queue.put(packet)
 				self.data_queue.task_done()
 			except asyncio.TimeoutError:
 				continue # 타임아웃은 정상 ; _running 상태 확인
@@ -87,10 +88,10 @@ class BaseParser(ABC):
 			self._parse_task = asyncio.create_task(self.parse_handler())
 
 
-	def stop(self) -> None:
+	async def stop(self) -> None:
 		"""파서 중지 - 비동기 파싱 작업 중지"""
 		self._running = False
-		#await self.data_queue.put(None)
+		# await self.data_queue.put(None)
 		if self._parse_task and not self._parse_task.done():
 			self._parse_task.cancel()
 
