@@ -4,644 +4,526 @@
 # date : 2025-07-02
 
 # Original Packages
-from asyncio import Queue, StreamReader, StreamWriter, Task, create_task, sleep
-from asyncio import start_server, open_connection, wait_for
-from ssl import SSLContext, PROTOCOL_TLS_SERVER, PROTOCOL_TLS_CLIENT
-from ssl import Purpose, create_default_context
-from typing import Dict, Optional, Type, Any, Callable
-from uuid import uuid4, UUID
-from time import time
+from abc import ABC, abstractmethod
+from asyncio import Queue, Task, StreamReader, StreamWriter
 from logging import getLogger, Logger
+from time import time
+from typing import Final, Optional, Dict, Any, Type, Union
+from uuid import uuid4, UUID
 
 import asyncio
-import socket
+import ssl
 
 
 
 
-class BaseParser:
-	"""
-	바이트 데이터 파서 기본 클래스
+class TlsTcp6Key:
+	LOGGER_LEVEL: Final		= 20 # logging.INFO
+	LOGGER_NAME: Final		= 'tls_tcp6'
 
-	데이터 큐에서 받은 바이트 데이터를 메시지 패킷으로 분석하여
-	메시지 패킷 큐에 전달하는 역할을 담당합니다.
-	"""
 
-	def __init__(self, data_queue: Queue, packet_queue: Queue):
+
+class BaseParser(ABC):
+	"""바이트 데이터를 메시지 패킷으로 파싱하는 기본 클래스"""
+
+	def __init__(self, data_queue: Queue[bytes], packet_queue: Queue[Any], logger_name:str = TlsTcp6Key.LOGGER_NAME):
 		"""
 		BaseParser 생성자
 
 		Args:
-			data_queue (Queue): 원시 데이터를 받는 큐
-			packet_queue (Queue): 분석된 메시지 패킷을 전달하는 큐
+			data_queue: 수신된 바이트 데이터를 담는 큐 (input)
+			packet_queue: 파싱된 메시지 패킷을 담는 큐 (output)
 		"""
-		self._data_queue = data_queue
-		self._packet_queue = packet_queue
+		self.data_queue = data_queue
+		self.packet_queue = packet_queue # 메시지 패킷 큐
 		self._running = False
 		self._parse_task: Optional[Task] = None
+		self.logger = getLogger(logger_name)
 
-	async def parse(self) -> None:
-		"""
-		데이터 큐에서 바이트 데이터를 받아 메시지 패킷으로 분석하는 코루틴
+		self.logger.debug(f"BaseParser 초기화: {data_queue=}, {packet_queue=}")
 
-		기본 동작은 바이트 데이터를 문자열로 변환하여 메시지 큐에 전달합니다.
+
+	def parse(self) -> Any:
+		"""파서에서 받은 바이트 데이터들을 조합 분석하여 패킷을 생성하여 메시지 패킷 큐에 입력합니다.
+			기본 동작: 바이트 데이터를 문자열로 변환하여 메시지 패킷 큐에 입력
 		"""
-		while self._running:
+		# 바이트 데이터를 문자열로 변환하여 패킷 큐에 입력
+		data = self._buf.decode('utf-8', errors='ignore')
+		self._buf = b"" # 버퍼 초기화
+		return data
+
+
+	async def parse_handler(self) -> None:
+		""" 비동기적으로 데이터 큐에서 바이트 데이터를 읽어 메시지 패킷으로 분석/변환하여 패킷 큐에 입력
+			하위 파서 클래스에서 parse() 함수 내부에서 바이트 데이터를 목적에 맞게 패킷으로 파싱하여 패킷 큐에 입력
+		"""
+		self._buf = b"" # 내부 버퍼
+		while self._running: # 타임아웃을 두어 주기적으로 _running 상태 확인
 			try:
-				# 데이터 큐에서 바이트 데이터 대기
-				data = await wait_for(self._data_queue.get(), timeout=0.1)
+				data = await asyncio.wait_for(self.data_queue.get(), timeout=1.0)
+				if (data == None):
+					break # 파싱 루틴 종료
 
-				# 바이트 데이터를 문자열로 변환
-				message = data.decode('utf-8', errors='ignore')
-
-				# 메시지 패킷 큐에 전달
-				await self._packet_queue.put(message)
-
+				if isinstance(data, str):
+					data = data.encode()
+				if isinstance(data, bytes):
+					self._buf += data
+					packet = self.parse()
+					await self.packet_queue.put(packet)
+				self.data_queue.task_done()
 			except asyncio.TimeoutError:
-				# 타임아웃 시 계속 대기
-				continue
+				continue # 타임아웃은 정상 ; _running 상태 확인
 			except Exception as e:
-				# 예외 발생 시 로깅 후 계속 진행
-				print(f"Parser error: {e}")
-				await sleep(0.1)
+				# 파싱 중 예외 발생 시 로깅 후 계속 처리
+				self.logger.error(f'parse_handler error: {e}')
+				continue
+		self.logger.error(f'parse_handler terminated.')
+
 
 	def start(self) -> None:
-		"""
-		파서 시작 - parse() 코루틴을 비동기 태스크로 실행
-		"""
-		self._running = True
-		self._parse_task = create_task(self.parse())
+		"""파서 시작 - 비동기 파싱 작업 시작"""
+		if not self._running:
+			self._running = True
+			self._parse_task = asyncio.create_task(self.parse_handler())
+
 
 	def stop(self) -> None:
-		"""
-		파서 중지 - 실행 중인 파싱 작업을 종료
-		"""
+		"""파서 중지 - 비동기 파싱 작업 중지"""
 		self._running = False
-		if self._parse_task:
+		#await self.data_queue.put(None)
+		if self._parse_task and not self._parse_task.done():
 			self._parse_task.cancel()
 
 
 class TlsTcp6Socket:
-	"""
-	TLS 1.3 기반 IPv6 TCP 소켓 통신 클래스
+	"""IPv6 TCP TLS 소켓 통신을 위한 기본 클래스"""
 
-	서버와 클라이언트에서 공통으로 사용되는 기능을 제공합니다.
-	X509 PKI 인증서를 통한 상호 인증을 지원합니다.
-	"""
-
-	def __init__(
-		self,
-		host: str = "::1",
-		port: int = 8888,
-		certfile: Optional[str] = None,
-		keyfile: Optional[str] = None,
-		cafile: Optional[str] = None,
-		packet_queue: Optional[Queue] = None,
-		logger_name: str = "tls_tcp6",
-		parser_class: Type[BaseParser] = BaseParser,
-		reader: Optional[StreamReader] = None,
-		writer: Optional[StreamWriter] = None,
-		**kwargs
-	):
+	def __init__(self, host: str = "::1", port: int = 8888,
+					cert_file: Optional[str] = None, key_file: Optional[str] = None,
+					ca_file: Optional[str] = None, packet_queue: Optional[Queue] = None,
+					logger_name: str = "tls_tcp6", parser_class: Type[BaseParser] = BaseParser,
+					reader: Optional[StreamReader] = None, writer: Optional[StreamWriter] = None,
+					**kwargs):
 		"""
 		TlsTcp6Socket 생성자
 
 		Args:
-			host (str): 연결할 호스트 주소 (기본값: "::1")
-			port (int): 연결할 포트 번호 (기본값: 8888)
-			certfile (Optional[str]): 인증서 파일 경로
-			keyfile (Optional[str]): 개인키 파일 경로
-			cafile (Optional[str]): CA 인증서 파일 경로
-			packet_queue (Optional[Queue]): 메시지 패킷 큐
-			logger_name (str): 로거 이름 (기본값: "tls_tcp6")
-			parser_class (Type[BaseParser]): 파서 클래스 타입
-			reader (Optional[StreamReader]): 스트림 리더 객체
-			writer (Optional[StreamWriter]): 스트림 라이터 객체
-			**kwargs: 추가 키워드 인수
+			host: 연결할 호스트 주소 (기본값: "::1")
+			port: 연결할 포트 번호 (기본값: 8888)
+			cert_file: 인증서 파일 경로
+			key_file: 개인키 파일 경로
+			ca_file: CA 인증서 파일 경로
+			packet_queue: 메시지 패킷 큐
+			logger_name: 로거 이름 (기본값: "tls_tcp6")
+			parser_class: 파서 클래스 타입 (기본값: BaseParser)
+			reader: StreamReader 객체 (서버에서 클라이언트 연결 시 사용)
+			writer: StreamWriter 객체 (서버에서 클라이언트 연결 시 사용)
+			**kwargs: 추가 키워드 인자
 		"""
-		self._host = host
-		self._port = port
-		self._certfile = certfile
-		self._keyfile = keyfile
-		self._cafile = cafile
-		self._packet_queue = packet_queue or Queue()
-		self._logger: Logger = getLogger(logger_name)
-		self._parser_class = parser_class
-		self._uuid: UUID = uuid4()
+		self.host = host
+		self.port = port
+		self.cert_file = cert_file
+		self.key_file = key_file
+		self.ca_file = ca_file
+		self.packet_queue: Optional[Queue] = packet_queue
+		self.parser_class = parser_class
+		self.reader = reader
+		self.writer = writer
+		self.logger: Logger = getLogger(logger_name)
+		self.uuid: UUID = uuid4() # 소켓 고유번호
 
-		# 스트림 객체
-		self._reader: Optional[StreamReader] = reader
-		self._writer: Optional[StreamWriter] = writer
+		# 시간 정보 초기화
+		self._connected_time: float = 0.0
+		self._last_received_time: float = 0.0
 
-		# 시간 정보
-		self._connected_time: Optional[float] = None
-		self._last_received_time: Optional[float] = None
+		# 큐 초기화
+		self._data_queue = Queue() # 내부용 수신용 큐
+		self._send_queue = Queue() # 내부용 송신용 큐
 
-		# 내부 큐
-		self._data_queue: Queue = Queue()
-		self._send_queue: Queue = Queue()
+		# 파서 초기화
+		self.parser: BaseParser = None
+		if (self.packet_queue != None):
+			self.parser = self.parser_class(self._data_queue, self.packet_queue)
 
-		# 파서 및 핸들러
-		self._parser: BaseParser = self._parser_class(self._data_queue, self._packet_queue)
-
-		# 태스크 관리
-		self._recv_task: Optional[Task] = None
-		self._send_task: Optional[Task] = None
-		self._packet_task: Optional[Task] = None
-
-		# 실행 상태
+		# 작업 관리
 		self._running = False
+		self._tasks: list[Task] = []
 
-		# 서버 참조 (서버에서 클라이언트 연결 시 사용)
-		self.server: Optional[Any] = kwargs.get('server')
+		# 서버 참조 (클라이언트 연결에서 사용)
+		self.server: Optional['TlsTcp6Server'] = kwargs.get('server')
 
-	def create_ssl_context(self) -> SSLContext:
+
+	def create_ssl_context(self) -> ssl.SSLContext:
 		"""
-		SSL 컨텍스트 생성
+		TLS 연결을 위한 SSL 컨텍스트 생성
 
 		Returns:
-			SSLContext: 생성된 SSL 컨텍스트
+			생성된 SSL 컨텍스트
 		"""
-		context = create_default_context(Purpose.SERVER_AUTH)
+		context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+		context.minimum_version = ssl.TLSVersion.TLSv1_3
 
-		if self._certfile and self._keyfile:
-			context.load_cert_chain(self._certfile, self._keyfile)
+		if self.cert_file and self.key_file:
+			context.load_cert_chain(self.cert_file, self.key_file)
 
-		if self._cafile:
-			context.load_verify_locations(self._cafile)
+		if self.ca_file:
+			context.load_verify_locations(self.ca_file)
+			context.verify_mode = ssl.CERT_REQUIRED
 
 		return context
 
 	def process_received_data(self, data: bytes) -> bytes:
 		"""
-		수신 데이터 후처리 메서드
+		수신된 데이터 후처리 메소드
 
 		Args:
-			data (bytes): 수신된 원시 데이터
+			data: 수신된 바이트 데이터
 
 		Returns:
-			bytes: 처리된 데이터 (기본값: 원본 데이터 반환)
+			후처리된 바이트 데이터
 		"""
 		return data
 
 	async def _recv_handler(self) -> None:
-		"""
-		데이터 수신 핸들러
-
-		스트림에서 데이터를 수신하여 처리합니다.
-		"""
-		if not self._reader:
+		"""데이터 수신 핸들러"""
+		if not self.reader:
 			return
 
-		# 최초 접속 시각 기록
+		# 최초 접속 시각 설정
 		self._connected_time = time()
 		self._last_received_time = self._connected_time
 
 		try:
 			while self._running:
-				# 데이터 수신
-				data = await self._reader.read(4096)
-
+				data = await self.reader.read(4096)
 				if not data:
-					# 연결이 끊어진 경우
 					break
 
-				# 마지막 수신 시각 갱신
+				# 마지막 데이터 수신 시각 갱신
 				self._last_received_time = time()
 
 				# 수신 데이터 후처리
 				processed_data = self.process_received_data(data)
 
-				# 데이터 큐에 추가
+				# 데이터 큐에 입력
 				await self._data_queue.put(processed_data)
 
 		except Exception as e:
-			self._logger.error(f"수신 핸들러 오류 [{self._uuid}]: {e}")
+			self.logger.error(f"수신 핸들러 오류 [{self.uuid}]: {e}")
 		finally:
-			await self._close_connection()
+			await self._cleanup()
 
 	async def _send_handler(self) -> None:
-		"""
-		데이터 송신 핸들러
-
-		송신 큐에서 데이터를 순차적으로 전송합니다.
-		"""
-		if not self._writer:
+		"""데이터 송신 핸들러"""
+		if not self.writer:
 			return
 
 		try:
 			while self._running:
 				try:
-					# 송신 큐에서 데이터 대기
-					data = await wait_for(self._send_queue.get(), timeout=0.5)
+					# 타임아웃을 두어 주기적으로 _running 상태 확인
+					data = await asyncio.wait_for(self._send_queue.get(), timeout=1.0)
+					if isinstance(data, (str, bytes)):
+						if isinstance(data, str):
+							data = data.encode('utf-8')
 
-					# 데이터 전송
-					self._writer.write(data)
-					await self._writer.drain()
-
+						self.writer.write(data)
+						await self.writer.drain()
+						self._send_queue.task_done()
 				except asyncio.TimeoutError:
 					continue
+
 		except Exception as e:
-			self._logger.error(f"송신 핸들러 오류 [{self._uuid}]: {e}")
+			self.logger.error(f"송신 핸들러 오류 [{self.uuid}]: {e}")
 		finally:
-			await self._close_connection()
+			await self._cleanup()
 
 	async def _packet_handler(self) -> None:
-		"""
-		메시지 패킷 처리 핸들러
-
-		메시지 패킷 큐에서 메시지를 받아 처리합니다.
-		기본 동작은 메시지를 출력하고 클라이언트로 에코합니다.
-		"""
+		"""메시지 패킷 처리 핸들러"""
 		try:
 			while self._running:
 				try:
-					# 메시지 패킷 큐에서 메시지 대기
-					message = await wait_for(self._packet_queue.get(), timeout=0.1)
+					# 타임아웃을 두어 주기적으로 _running 상태 확인
+					packet = await asyncio.wait_for(self._packet_queue.get(), timeout=1.0)
+					self.logger.info(f"수신 패킷 [{self.uuid}]: {packet}")
 
-					# 메시지 출력
-					self._logger.info(f"수신 메시지 [{self._uuid}]: {message}")
-
-					# 메시지를 바이트로 변환하여 에코
-					echo_data = message.encode('utf-8')
-					await self.send(echo_data)
+					# 받은 메시지를 그대로 전송
+					await self.send(packet)
+					self._packet_queue.task_done()
 				except asyncio.TimeoutError:
 					continue
-		except Exception as e:
-			self._logger.error(f"패킷 핸들러 오류 [{self._uuid}]: {e}")
 
-	async def send(self, data: bytes) -> None:
+		except Exception as e:
+			self.logger.error(f"패킷 핸들러 오류 [{self.uuid}]: {e}")
+
+	async def send(self, data: Union[str, bytes]) -> None:
 		"""
-		데이터 송신
+		데이터 송신 (외부 인터페이스)
 
 		Args:
-			data (bytes): 전송할 데이터
+			data: 송신할 데이터 (문자열 또는 바이트)
 		"""
-		await self._send_queue.put(data)
+		if self._running:
+			await self._send_queue.put(data)
 
 	async def start(self) -> None:
-		"""
-		소켓 통신 시작
+		"""소켓 통신 시작"""
+		if self._running:
+			return
 
-		수신, 송신, 패킷 처리 핸들러를 비동기 태스크로 실행합니다.
-		"""
 		self._running = True
 
 		# 파서 시작
-		self._parser.start()
+		self.parser.start()
 
-		# 핸들러 태스크 시작
-		self._recv_task = create_task(self._recv_handler())
-		self._send_task = create_task(self._send_handler())
-		self._packet_task = create_task(self._packet_handler())
+		# 핸들러 작업 시작
+		self._tasks = [
+			asyncio.create_task(self._recv_handler()),
+			asyncio.create_task(self._send_handler()),
+			asyncio.create_task(self._packet_handler())
+		]
+
+		self.logger.info(f"소켓 통신 시작 [{self.uuid}]")
 
 	async def stop(self) -> None:
-		"""
-		소켓 통신 중지
+		"""소켓 통신 중지"""
+		if not self._running:
+			return
 
-		모든 핸들러를 종료하고 연결을 정리합니다.
-		"""
 		self._running = False
 
 		# 파서 중지
-		self._parser.stop()
+		self.parser.stop()
 
-		# 태스크 취소
-		if self._recv_task:
-			self._recv_task.cancel()
-		if self._send_task:
-			self._send_task.cancel()
-		if self._packet_task:
-			self._packet_task.cancel()
+		# 작업 취소
+		for task in self._tasks:
+			if not task.done():
+				task.cancel()
 
-		await self._close_connection()
+		# 작업 완료 대기
+		if self._tasks:
+			await asyncio.gather(*self._tasks, return_exceptions=True)
 
-	async def _close_connection(self) -> None:
+		await self._cleanup()
+
+		self.logger.info(f"소켓 통신 중지 [{self.uuid}]")
+
+	async def _cleanup(self) -> None:
+		"""리소스 정리"""
+		if self.writer:
+			try:
+				self.writer.close()
+				await self.writer.wait_closed()
+			except Exception as e:
+				self.logger.error(f"Writer 정리 오류 [{self.uuid}]: {e}")
+
+		self.reader = None
+		self.writer = None
+
+	def is_timeout(self, timeout_seconds: float = 60.0) -> bool:
 		"""
-		연결 종료 처리
+		연결 타임아웃 확인
+
+		Args:
+			timeout_seconds: 타임아웃 시간 (초, 기본값: 60초)
+
+		Returns:
+			타임아웃 여부
 		"""
-		if self._writer:
-			self._writer.close()
-			await self._writer.wait_closed()
+		if not self._last_received_time:
+			return False
 
-		self._logger.info(f"연결 종료 [{self._uuid}]")
-
-	@property
-	def uuid(self) -> UUID:
-		"""소켓 UUID 반환"""
-		return self._uuid
-
-	@property
-	def connected_time(self) -> Optional[float]:
-		"""최초 접속 시각 반환"""
-		return self._connected_time
-
-	@property
-	def last_received_time(self) -> Optional[float]:
-		"""마지막 데이터 수신 시각 반환"""
-		return self._last_received_time
+		return (time() - self._last_received_time) > timeout_seconds
 
 
-class TlsTcp6Server:
-	"""
-	TLS 1.3 기반 IPv6 TCP 서버 클래스
+class TlsTcp6Server(TlsTcp6Socket):
+	"""IPv6 TCP TLS 서버 클래스"""
 
-	다중 클라이언트 연결을 처리하고 관리합니다.
-	"""
-
-	def __init__(
-		self,
-		*args,
-		host: str = "::1",
-		port: int = 8888,
-		certfile: Optional[str] = None,
-		keyfile: Optional[str] = None,
-		cafile: Optional[str] = None,
-		logger_name: str = "tls_tcp6",
-		socket_class: Type[TlsTcp6Socket] = TlsTcp6Socket,
-		timeout: float = 60.0,
-		**kwargs
-	):
+	def __init__(self, *args, socket_class: Type[TlsTcp6Socket] = TlsTcp6Socket, **kwargs):
 		"""
 		TlsTcp6Server 생성자
 
 		Args:
-			*args: 위치 인수
-			host (str): 서버 바인딩 주소 (기본값: "::1")
-			port (int): 서버 포트 번호 (기본값: 8888)
-			certfile (Optional[str]): 인증서 파일 경로
-			keyfile (Optional[str]): 개인키 파일 경로
-			cafile (Optional[str]): CA 인증서 파일 경로
-			logger_name (str): 로거 이름 (기본값: "tls_tcp6")
-			socket_class (Type[TlsTcp6Socket]): 소켓 클래스 타입
-			timeout (float): 연결 타임아웃 시간 (기본값: 60초)
-			**kwargs: 추가 키워드 인수
+			*args: 위치 인자
+			socket_class: 클라이언트 연결에 사용할 소켓 클래스
+			**kwargs: 키워드 인자
 		"""
-		self._host = host
-		self._port = port
-		self._certfile = certfile
-		self._keyfile = keyfile
-		self._cafile = cafile
-		self._logger: Logger = getLogger(logger_name)
-		self._socket_class = socket_class
-		self._timeout = timeout
-		self._kwargs = kwargs
-
-		# 클라이언트 연결 관리
-		self._clients: Dict[UUID, TlsTcp6Socket] = {}
-
-		# 서버 상태
-		self._running = False
-		self._server: Optional[Any] = None
+		super().__init__(*args, **kwargs)
+		self.socket_class = socket_class
+		self.clients: Dict[UUID, TlsTcp6Socket] = {}
+		self._server: Optional[asyncio.Server] = None
 		self._cleanup_task: Optional[Task] = None
-
-	def create_ssl_context(self) -> SSLContext:
-		"""
-		서버용 SSL 컨텍스트 생성
-
-		Returns:
-			SSLContext: 생성된 SSL 컨텍스트
-		"""
-		context = SSLContext(PROTOCOL_TLS_SERVER)
-
-		if self._certfile and self._keyfile:
-			context.load_cert_chain(self._certfile, self._keyfile)
-
-		if self._cafile:
-			context.load_verify_locations(self._cafile)
-
-		return context
 
 	async def _handle_client(self, reader: StreamReader, writer: StreamWriter) -> None:
 		"""
 		클라이언트 연결 처리
 
 		Args:
-			reader (StreamReader): 스트림 리더
-			writer (StreamWriter): 스트림 라이터
+			reader: 클라이언트 StreamReader
+			writer: 클라이언트 StreamWriter
 		"""
-		# 클라이언트 소켓 생성
-		client_socket = self._socket_class(
-			host=self._host,
-			port=self._port,
-			certfile=self._certfile,
-			keyfile=self._keyfile,
-			cafile=self._cafile,
+		client_socket = self.socket_class(
+			host=self.host,
+			port=self.port,
+			cert_file=self.cert_file,
+			key_file=self.key_file,
+			ca_file=self.ca_file,
 			packet_queue=Queue(),
+			logger_name=self.logger.name,
+			parser_class=self.parser_class,
 			reader=reader,
 			writer=writer,
-			server=self,
-			**self._kwargs
+			server=self
 		)
 
 		# 클라이언트 목록에 추가
-		self._clients[client_socket.uuid] = client_socket
+		self.clients[client_socket.uuid] = client_socket
 
-		self._logger.info(f"클라이언트 연결 [{client_socket.uuid}]")
+		client_addr = writer.get_extra_info('peername')
+		self.logger.info(f"클라이언트 연결 [{client_socket.uuid}]: {client_addr}")
 
-		# 클라이언트 소켓 시작
-		await client_socket.start()
+		try:
+			await client_socket.start()
+
+			# 클라이언트 연결 유지
+			while client_socket._running:
+				await asyncio.sleep(1.0)
+
+		except Exception as e:
+			self.logger.error(f"클라이언트 처리 오류 [{client_socket.uuid}]: {e}")
+		finally:
+			# 클라이언트 정리
+			await client_socket.stop()
+			if client_socket.uuid in self.clients:
+				del self.clients[client_socket.uuid]
+
+			self.logger.info(f"클라이언트 연결 종료 [{client_socket.uuid}]")
 
 	async def _cleanup_clients(self) -> None:
-		"""
-		비정상 연결 및 타임아웃 클라이언트 정리
-		"""
+		"""타임아웃된 클라이언트 정리"""
 		while self._running:
 			try:
-				current_time = time()
-				cleanup_list = []
+				await asyncio.sleep(10.0)  # 10초마다 확인
 
-				for uuid, client in self._clients.items():
-					# 타임아웃 검사
-					if (client.last_received_time and
-						current_time - client.last_received_time > self._timeout):
-						cleanup_list.append(uuid)
+				timeout_clients = []
+				for client_uuid, client in self.clients.items():
+					if client.is_timeout():
+						timeout_clients.append(client_uuid)
 
-				# 타임아웃된 클라이언트 정리
-				for uuid in cleanup_list:
-					client = self._clients.pop(uuid, None)
+				for client_uuid in timeout_clients:
+					client = self.clients.get(client_uuid)
 					if client:
+						self.logger.info(f"타임아웃 클라이언트 정리 [{client_uuid}]")
 						await client.stop()
-						self._logger.info(f"타임아웃 클라이언트 정리 [{uuid}]")
-
-				# 1초마다 정리 작업 수행
-				await sleep(1.0)
 
 			except Exception as e:
-				self._logger.error(f"클라이언트 정리 오류: {e}")
-				await sleep(1.0)
+				self.logger.error(f"클라이언트 정리 오류: {e}")
 
 	async def start(self) -> None:
-		"""
-		서버 시작
-		"""
+		"""서버 시작"""
+		if self._running:
+			return
+
 		self._running = True
 
 		# SSL 컨텍스트 생성
 		ssl_context = self.create_ssl_context()
 
 		# 서버 시작
-		self._server = await start_server(
+		self._server = await asyncio.start_server(
 			self._handle_client,
-			self._host,
-			self._port,
+			self.host,
+			self.port,
 			ssl=ssl_context,
-			family=socket.AF_INET6
+			family=asyncio.socket.AF_INET6
 		)
 
-		# 클라이언트 정리 태스크 시작
-		self._cleanup_task = create_task(self._cleanup_clients())
+		# 클라이언트 정리 작업 시작
+		self._cleanup_task = asyncio.create_task(self._cleanup_clients())
 
-		self._logger.info(f"서버 시작 [{self._host}]:{self._port}")
+		self.logger.info(f"서버 시작: {self.host}:{self.port}")
+
+		# 서버 실행
+		await self._server.serve_forever()
 
 	async def stop(self) -> None:
-		"""
-		서버 중지
-		"""
+		"""서버 중지"""
+		if not self._running:
+			return
+
 		self._running = False
-
-		# 클라이언트 정리 태스크 중지
-		if self._cleanup_task:
-			self._cleanup_task.cancel()
-
-		# 모든 클라이언트 연결 종료
-		for client in self._clients.values():
-			await client.stop()
-
-		self._clients.clear()
 
 		# 서버 중지
 		if self._server:
 			self._server.close()
 			await self._server.wait_closed()
 
-		self._logger.info("서버 중지")
+		# 클라이언트 정리 작업 중지
+		if self._cleanup_task and not self._cleanup_task.done():
+			self._cleanup_task.cancel()
 
-	@property
-	def clients(self) -> Dict[UUID, TlsTcp6Socket]:
-		"""연결된 클라이언트 목록 반환"""
-		return self._clients.copy()
+		# 모든 클라이언트 연결 종료
+		for client in list(self.clients.values()):
+			await client.stop()
+
+		self.clients.clear()
+
+		self.logger.info("서버 중지")
 
 
-class TlsTcp6Client:
-	"""
-	TLS 1.3 기반 IPv6 TCP 클라이언트 클래스
-	"""
+class TlsTcp6Client(TlsTcp6Socket):
+	"""IPv6 TCP TLS 클라이언트 클래스"""
 
-	def __init__(
-		self,
-		*args,
-		host: str = "::1",
-		port: int = 8888,
-		certfile: Optional[str] = None,
-		keyfile: Optional[str] = None,
-		cafile: Optional[str] = None,
-		logger_name: str = "tls_tcp6",
-		parser_class: Type[BaseParser] = BaseParser,
-		check_hostname: bool = True,
-		**kwargs
-	):
+	def __init__(self, *args, check_hostname: bool = True, **kwargs):
 		"""
 		TlsTcp6Client 생성자
 
 		Args:
-			*args: 위치 인수
-			host (str): 서버 주소 (기본값: "::1")
-			port (int): 서버 포트 번호 (기본값: 8888)
-			certfile (Optional[str]): 인증서 파일 경로
-			keyfile (Optional[str]): 개인키 파일 경로
-			cafile (Optional[str]): CA 인증서 파일 경로
-			logger_name (str): 로거 이름 (기본값: "tls_tcp6")
-			parser_class (Type[BaseParser]): 파서 클래스 타입
-			check_hostname (bool): 호스트네임 검증 여부 (기본값: True)
-			**kwargs: 추가 키워드 인수
+			*args: 위치 인자
+			check_hostname: 호스트명 검증 여부 (기본값: True)
+			**kwargs: 키워드 인자
 		"""
-		self._host = host
-		self._port = port
-		self._certfile = certfile
-		self._keyfile = keyfile
-		self._cafile = cafile
-		self._logger: Logger = getLogger(logger_name)
-		self._parser_class = parser_class
+		super().__init__(*args, **kwargs)
 		self.check_hostname = check_hostname
-		self._kwargs = kwargs
 
-		# 클라이언트 소켓
-		self._socket: Optional[TlsTcp6Socket] = None
-
-	def create_ssl_context(self) -> SSLContext:
+	def create_ssl_context(self) -> ssl.SSLContext:
 		"""
 		클라이언트용 SSL 컨텍스트 생성
 
 		Returns:
-			SSLContext: 생성된 SSL 컨텍스트
+			생성된 SSL 컨텍스트
 		"""
-		context = SSLContext(PROTOCOL_TLS_CLIENT)
+		context = super().create_ssl_context()
 		context.check_hostname = self.check_hostname
-
-		if self._certfile and self._keyfile:
-			context.load_cert_chain(self._certfile, self._keyfile)
-
-		if self._cafile:
-			context.load_verify_locations(self._cafile)
-
 		return context
 
 	async def connect(self) -> None:
-		"""
-		서버에 연결
-		"""
+		"""서버에 연결"""
+		if self._running:
+			return
+
 		# SSL 컨텍스트 생성
 		ssl_context = self.create_ssl_context()
 
-		# 서버 연결
-		reader, writer = await open_connection(
-			self._host,
-			self._port,
-			ssl=ssl_context,
-			family=socket.AF_INET6
-		)
+		try:
+			# 서버에 연결
+			self._reader, self._writer = await asyncio.open_connection(
+				self.host,
+				self.port,
+				ssl=ssl_context,
+				family=asyncio.socket.AF_INET6
+			)
 
-		# 클라이언트 소켓 생성
-		self._socket = TlsTcp6Socket(
-			host=self._host,
-			port=self._port,
-			certfile=self._certfile,
-			keyfile=self._keyfile,
-			cafile=self._cafile,
-			packet_queue=Queue(),
-			parser_class=self._parser_class,
-			reader=reader,
-			writer=writer,
-			**self._kwargs
-		)
+			self.logger.info(f"서버 연결 성공: {self.host}:{self.port}")
 
-		# 소켓 시작
-		await self._socket.start()
+			# 소켓 통신 시작
+			await self.start()
 
-		self._logger.info(f"서버 연결 [{self._host}]:{self._port}")
-
-	async def send(self, data: bytes) -> None:
-		"""
-		데이터 전송
-
-		Args:
-			data (bytes): 전송할 데이터
-		"""
-		if self._socket:
-			await self._socket.send(data)
+		except Exception as e:
+			self.logger.error(f"서버 연결 실패: {e}")
+			raise
 
 	async def disconnect(self) -> None:
-		"""
-		서버 연결 해제
-		"""
-		if self._socket:
-			await self._socket.stop()
-			self._socket = None
-
-		self._logger.info("서버 연결 해제")
-
-	@property
-	def socket(self) -> Optional[TlsTcp6Socket]:
-		"""클라이언트 소켓 반환"""
-		return self._socket
+		"""서버 연결 해제"""
+		await self.stop()
+		self.logger.info("서버 연결 해제")
