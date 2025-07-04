@@ -8,6 +8,7 @@ from asyncio import Queue
 from typing import Any
 
 import asyncio
+import uuid
 
 
 
@@ -45,7 +46,7 @@ class TestBaseParser:
 		"""
 		data_queue = Queue()
 		packet_queue = Queue()
-		parser = BaseParser(data_queue, packet_queue)
+		parser = BaseParser(uuid.uuid4(), data_queue, packet_queue)
 		parser.start()
 		yield data_queue, packet_queue, parser
 		# 테스트 후 정리
@@ -77,7 +78,7 @@ class TestBaseParser:
 		test_data = b"Hello World"
 		await data_queue.put(test_data)
 		await data_queue.join()
-		processed_message = await packet_queue.get()
+		_, processed_message = await packet_queue.get()
 		assert processed_message == "Hello World"
 		assert packet_queue.empty()
 
@@ -93,7 +94,7 @@ class TestBaseParser:
 		await data_queue.join()
 
 		for expected_msg in ["First", "Second", "Third"]:
-			msg = await packet_queue.get()
+			_, msg = await packet_queue.get()
 			assert msg == expected_msg
 		assert packet_queue.empty()
 
@@ -151,7 +152,7 @@ class TestBaseParser:
 		await asyncio.sleep(0.1)
 		assert parser._parse_task.done()
 		# "Data before stop"은 처리되어야 함
-		processed_message = await packet_queue.get()
+		_, processed_message = await packet_queue.get()
 		assert processed_message == "Data before stop"
 		assert packet_queue.empty()
 
@@ -185,7 +186,7 @@ class TestBaseParser:
 		test_data = b"Restarted Data"
 		await data_queue.put(test_data)
 		await data_queue.join()
-		processed_message = await packet_queue.get()
+		_, processed_message = await packet_queue.get()
 		assert processed_message == "Restarted Data"
 		assert packet_queue.empty()
 
@@ -201,7 +202,7 @@ class TestBaseParser:
 		large_data = b"A" * (1024 * 1024) # 1MB
 		await data_queue.put(large_data)
 		await data_queue.join()
-		processed_message = await packet_queue.get()
+		_, processed_message = await packet_queue.get()
 		assert processed_message == large_data.decode('utf-8')
 		assert packet_queue.empty()
 
@@ -222,7 +223,8 @@ class TestBaseParser:
 		async def consumer():
 			received_messages = []
 			for _ in range(num_messages):
-				received_messages.append(await packet_queue.get())
+				_, msg = await packet_queue.get()
+				received_messages.append(msg)
 			return received_messages
 
 		prod_task = asyncio.create_task(producer())
@@ -275,7 +277,7 @@ class TestBaseParser:
 		# fixture의 setup_parser는 이미 start()를 호출했으므로, 새로운 인스턴스로 테스트
 		data_queue = Queue()
 		packet_queue = Queue()
-		parser = BaseParser(data_queue, packet_queue)
+		parser = BaseParser(uuid.uuid4(), data_queue, packet_queue)
 
 		test_data = b"Direct Call"
 		await data_queue.put(test_data)
@@ -285,7 +287,7 @@ class TestBaseParser:
 		parser._running = True
 		await parser.parse_handler()
 
-		processed_message = await packet_queue.get()
+		_, processed_message = await packet_queue.get()
 		assert processed_message == "Direct Call"
 		assert packet_queue.empty()
 
@@ -303,14 +305,14 @@ class TestBaseParser:
 
 		data_queue = Queue()
 		packet_queue = Queue()
-		custom_parser = TestCustomParser(data_queue, packet_queue)
+		custom_parser = TestCustomParser(uuid.uuid4(), data_queue, packet_queue)
 		custom_parser.start()
 
 		test_data = b"Python"
 		await data_queue.put(test_data)
 		await data_queue.join()
 
-		processed_message = await packet_queue.get()
+		_, processed_message = await packet_queue.get()
 		assert processed_message == "nohtyP" # 역순 확인
 		assert packet_queue.empty()
 		await custom_parser.stop()
@@ -330,9 +332,11 @@ class TestBaseParser:
 		# 파서가 종료되었으므로 더 이상 packet_queue에 메시지가 추가되지 않아야 함
 		# 하지만 이미 put된 'test1', 'test2'는 처리되어야 합니다.
 		messages = []
-		messages.append(await packet_queue.get())
+		_, processed_message = await packet_queue.get()
+		messages.append(processed_message)
 		packet_queue.task_done()
-		messages.append(await packet_queue.get())
+		_, processed_message = await packet_queue.get()
+		messages.append(processed_message)
 		packet_queue.task_done()
 		await packet_queue.join() # 이 시점에 남아있는 packet_queue 작업은 완료되어야 함
 		assert sorted(messages) == sorted(["test1", "test2"])
@@ -392,7 +396,9 @@ class TestBaseParser:
 
 		received_messages = []
 		for _ in range(num_messages):
-			received_messages.append(await packet_queue.get())
+			_, processed_message = await packet_queue.get()
+			received_messages.append(processed_message)
+			packet_queue.task_done()
 
 		assert len(received_messages) == num_messages
 		assert sorted(received_messages) == sorted(expected_messages)
@@ -408,7 +414,7 @@ class TestBaseParser:
 		await data_queue.put(long_message.encode('utf-8'))
 		await data_queue.join()
 
-		processed_message = await packet_queue.get()
+		_, processed_message = await packet_queue.get()
 		assert processed_message == long_message
 		assert packet_queue.empty()
 
@@ -432,7 +438,7 @@ class TestBaseParser:
 
 		data_queue = Queue()
 		packet_queue = Queue()
-		parser = TestCustomParser(data_queue, packet_queue)
+		parser = TestCustomParser(uuid.uuid4(), data_queue, packet_queue)
 		parser.start()
 
 		# "Hello" -> " World!"
@@ -444,7 +450,7 @@ class TestBaseParser:
 		await data_queue.join()
 
 		# TestCustomParser는 줄바꿈 기준으로 파싱하므로, "Hello World!" 전체가 하나의 메시지로 파싱됨
-		processed_message = await packet_queue.get()
+		_, processed_message = await packet_queue.get()
 		assert processed_message == "Hello World!"
 		assert packet_queue.empty()
 
@@ -453,7 +459,7 @@ class TestBaseParser:
 		await asyncio.sleep(0.01)
 		await data_queue.put(b"Part2\n")
 		await data_queue.join()
-		processed_message = await packet_queue.get()
+		_, processed_message = await packet_queue.get()
 		assert processed_message == "Part1Part2"
 		assert packet_queue.empty()
 		await parser.stop()
@@ -479,7 +485,7 @@ class TestBaseParser:
 
 		data_queue = Queue()
 		packet_queue = Queue()
-		parser = TestCustomParser(data_queue, packet_queue)
+		parser = TestCustomParser(uuid.uuid4(), data_queue, packet_queue)
 		parser.start()
 
 		valid_data1 = b"Valid Message One"
@@ -494,9 +500,11 @@ class TestBaseParser:
 		await data_queue.put(b'\n')
 		await data_queue.join()
 
-		msg1 = await packet_queue.get()
+		_, msg1 = await packet_queue.get()
+		packet_queue.task_done()
 		assert msg1 == valid_data1.decode('utf-8')
-		msg2 = await packet_queue.get()
+		_, msg2 = await packet_queue.get()
+		packet_queue.task_done()
 		assert msg2 == valid_data2.decode('utf-8')
 
 		assert packet_queue.empty() # 유효하지 않은 데이터는 파싱되지 않아야 함
@@ -515,7 +523,7 @@ class TestBaseParser:
 			await asyncio.sleep(0.01) # 잠시 실행
 			await data_queue.put(f"Cycle {i} Message".encode('utf-8'))
 			await data_queue.join() # 메시지 처리 대기
-			msg = await packet_queue.get()
+			_, msg = await packet_queue.get()
 			assert msg == f"Cycle {i} Message"
 			assert packet_queue.empty()
 			await parser.stop()
@@ -541,15 +549,23 @@ class TestBaseParser:
 		await data_queue.join()
 
 		# BaseParser는 decode만 하므로, 공백과 줄바꿈은 그대로 유지됩니다.
-		assert await packet_queue.get() == "  leading_space "
-		assert await packet_queue.get() == "trailing_space  "
-		assert await packet_queue.get() == "  both_spaces  "
+		_, processed_message = await packet_queue.get()
+		packet_queue.task_done()
+		assert processed_message == "  leading_space "
+		_, processed_message = await packet_queue.get()
+		packet_queue.task_done()
+		assert processed_message == "trailing_space  "
+		_, processed_message = await packet_queue.get()
+		packet_queue.task_done()
+		assert processed_message == "  both_spaces  "
 		# BaseParser의 parse()는 `message = data.decode('utf-8')` 이후 별도 처리가 없으므로,
 		# 빈 바이트열은 빈 문자열로, '\n'은 '\n'으로 들어갑니다.
 		# 기존 test_04와 test_05에서 empty()를 사용했는데, 이는 test_25의 의도와 다소 다릅니다.
 		# BaseParser의 `parse` 메서드 내부에서 `packet_queue.put(message)` 호출 시
 		# `message`가 `\n`일 수 있음을 확인합니다.
-		assert await packet_queue.get() == "\n"
+		_, processed_message = await packet_queue.get()
+		packet_queue.task_done()
+		assert processed_message == "\n"
 		assert packet_queue.empty()
 
 	@pytest.mark.asyncio
@@ -574,7 +590,9 @@ class TestBaseParser:
 
 		received_messages = []
 		for _ in range(len(special_messages)):
-			received_messages.append(await packet_queue.get())
+			_, processed_message = await packet_queue.get()
+			received_messages.append(processed_message)
+			packet_queue.task_done()
 
 		assert received_messages == special_messages
 		assert packet_queue.empty()
@@ -592,7 +610,10 @@ class TestBaseParser:
 
 		await data_queue.put(b"After Idle")
 		await data_queue.join()
-		assert await packet_queue.get() == "After Idle"
+		_, processed_message = await packet_queue.get()
+		assert processed_message == "After Idle"
+		packet_queue.task_done()
+		await packet_queue.join()
 
 	@pytest.mark.asyncio
 	async def test_28_immediate_stop_after_start_with_no_data(self, setup_parser):
@@ -613,8 +634,8 @@ class TestBaseParser:
 			예상치 못한 일반 예외가 발생했을 때 BaseParser의 Task가 어떻게 종료되는지 확인합니다.
 		"""
 		class CrashingParser(BaseParser):
-			def __init__(self, data_queue: Queue[bytes], packet_queue: Queue[str], crash_after: int = 1) -> None:
-				super().__init__(data_queue, packet_queue)
+			def __init__(self, parser_uuid:uuid.UUID, data_queue: Queue[bytes], packet_queue: Queue[str], crash_after: int = 1) -> None:
+				super().__init__(parser_uuid, data_queue, packet_queue)
 				self._processed_count = 0
 				self._crash_after = crash_after
 
@@ -641,7 +662,7 @@ class TestBaseParser:
 
 		data_queue = Queue()
 		packet_queue = Queue()
-		crashing_parser = CrashingParser(data_queue, packet_queue, crash_after=1) # 첫 메시지 후 크래시
+		crashing_parser = CrashingParser(uuid.uuid4(), data_queue, packet_queue, crash_after=1) # 첫 메시지 후 크래시
 		crashing_parser.start()
 
 		await data_queue.put(b"Message 1 (should cause crash)")
