@@ -23,49 +23,43 @@ from lib.tls_tcp6 import BaseParser, TlsTcp6Client
 
 
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG,
+					format='%(asctime)s - %(lineno)d - %(levelname)s - %(message)s')
 
-
-
-async def main() -> None:
-	"""클라이언트 예제"""
-	logging.basicConfig(level=logging.INFO)
-
+async def main():
 	client = TlsTcp6Client(
-		cert_file="conf/evcc_ee.crt",
-		key_file="conf/evcc_ee.key",
+		cert_file="conf/client.crt",
+		key_file="conf/client.key",
 		ca_file="conf/root.crt",
 		check_hostname=False
 	)
-
+	
 	try:
 		# 서버 연결
-		await client.connect("::1", 8443)
-
-		# 파서 시작
-		parser = BaseParser(client.receive_queue)
-		parser_task = asyncio.create_task(parser.start_parsing())
-
-		# 테스트 메시지 전송
-		test_message = b"Hello, TLS IPv6 Server!"
-		await client.send_data(test_message)
-		print(f"전송: {test_message}")
-
-		# 에코 응답 수신 대기
-		echo_response = await asyncio.wait_for(parser.message_queue.get(), timeout=5.0)
-		print(f"수신: {echo_response}")
-
-		if echo_response == test_message:
-			print("에코 테스트 성공!")
-		else:
-			print("에코 테스트 실패!")
-
+		await client.start()
+		
+		# 메시지 송신
+		await client.send(b"Hello Server!")
+		# await asyncio.sleep(0.5)
+		uuid, packet = await client.packet_queue.get()
+		print(f"{packet=}")
+		client.packet_queue.task_done()
+		
+		await client.send(b"How are you?")
+		# await asyncio.sleep(0.5)
+		uuid, packet = await client.packet_queue.get()
+		print(f"{packet=}")
+		client.packet_queue.task_done()
+		
+		# 연결 유지
+		await asyncio.sleep(3)
+		
 	except Exception as e:
-		print(f"클라이언트 오류: {e}")
+		print(f"Client error: {e}")
 	finally:
-		await client.disconnect()
+		# 연결 해제
+		await client.close()
 
 
 
-if (__name__ == "__main__"):
-	asyncio.run(main())
+asyncio.run(main())
