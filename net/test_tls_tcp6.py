@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # PyTest : TlsTcp6Server, TlsTcp6Client
 # made : hbesthee@naver.com
-# date : 2025-07-06
+# date : 2025-07-07
 
 # Original Packages
 from asyncio import Queue
@@ -210,6 +210,99 @@ class TestConnectionStability:
 		await wait_for_client_count(server, 1)
 		ssl_obj = client._tx_stream.get_extra_info('ssl_object')
 		assert ssl_obj.version() == 'TLSv1.3'
+
+
+
+class TestNetworkInstability:
+	"""네트워크 불안정 상황에 대한 안정성 테스트"""
+
+	@pytest.mark.asyncio
+	async def test_client_handles_server_not_running(self, client_factory, unused_tcp_port):
+		"""10. 서버가 실행되지 않았을 때 클라이언트가 ConnectionRefusedError를 처리하는지 검증"""
+		client = await client_factory(unused_tcp_port)
+		await client.start() # 연결 시도
+		assert client._is_closing is True # 연결 실패 후 스스로 close 해야 함
+		assert client._rx_stream is None
+
+
+	@pytest.mark.asyncio
+	async def test_server_handles_abrupt_client_disconnect(self, server: TlsTcp6Server, client_factory):
+		"""11. 클라이언트가 비정상 종료되었을 때 서버가 리소스를 정리하는지 검증"""
+		client = await client_factory(server.port)
+		await client.start()
+		await wait_for_client_count(server, 1)
+
+		# 소켓을 강제로 닫아 비정상 종료 흉내
+		client._tx_stream.close()
+		await client._tx_stream.wait_closed()
+
+		await wait_for_client_count(server, 0, timeout=5) # 서버가 연결 종료를 감지하고 정리해야 함
+		assert len(server._clients) == 0
+
+
+	@pytest.mark.asyncio
+	@pytest.mark.parametrize("server", [{"idle_timeout": 1}], indirect=True)
+	async def test_idle_timeout(self, server: TlsTcp6Server, client_factory):
+		"""12. 유휴 상태의 클라이언트가 설정된 시간(1초) 후 자동으로 연결 종료되는지 검증"""
+		client = await client_factory(server.port)
+		await client.start()
+		await wait_for_client_count(server, 1)
+
+		await asyncio.sleep(2) # idle_timeout(1초)보다 길게 대기
+
+		await wait_for_client_count(server, 0, timeout=3)
+		assert len(server._clients) == 0
+		assert client._is_closing is True
+
+
+	@pytest.mark.asyncio
+	async def test_send_to_closed_socket_by_client(self, server: TlsTcp6Server, client_factory):
+		"""13. 클라이언트가 이미 닫힌 소켓에 데이터 전송 시도 시 에러 없이 처리하는지 검증"""
+		client = await client_factory(server.port)
+		await client.start()
+		await client.close()
+
+		# 예외가 발생하지 않아야 함
+		await client.send(b'data to closed socket')
+		assert client.packet_queue.qsize() == 0
+
+
+	@pytest.mark.asyncio
+	async def test_malformed_utf8_data(self, server: TlsTcp6Server, client_factory, caplog):
+		"""14. 기본 파서가 처리할 수 없는 (잘못된 UTF-8) 데이터 수신 시 서버가 안정적인지 검증"""
+		client = await client_factory(server.port)
+		await client.start()
+		await wait_for_client_count(server, 1)
+
+		# 잘못된 바이트 시퀀스 전송
+		await client.send(b'\xff\xfe\xfd')
+
+		# 서버는 안정적으로 유지되어야 하고, 클라이언트 수는 1이어야 함
+		await asyncio.sleep(0.1)
+		assert len(server._clients) == 1
+		assert "UTF-8 디코딩 실패" in caplog.text
+
+
+	@pytest.mark.asyncio
+	async def test_client_with_bad_ca_is_rejected(self, server, certs, unused_tcp_port):
+		"""15. 잘못된 CA로 서명된 클라이언트 인증서 접속이 거부되는지 검증"""
+		# 별도의 자체 서명된 인증서 생성 (테스트용)
+		bad_cert = "conf/bad_client.crt"
+		bad_key = "conf/bad_client.key"
+		if not os.path.exists(bad_cert):
+			pytest.skip("테스트를 위한 bad_client 인증서가 없습니다.")
+
+		bad_client = TlsTcp6Client(
+			cert_file=bad_cert,
+			key_file=bad_key,
+			ca_file=certs["ca"],
+			host="::1",
+			port=server.port,
+			check_hostname=False,
+		)
+		with pytest.raises(ssl.SSLError):
+			# SSLError가 발생해야 정상
+			await asyncio.wait_for(bad_client.start(), timeout=2)
 
 
 
