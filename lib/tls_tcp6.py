@@ -50,31 +50,36 @@ class BaseParser(ABC):
 			data_queue: 수신된 바이트 데이터를 담는 큐 (input)
 			packet_queue: 파싱된 메시지 패킷을 담는 큐 (output)
 		"""
+		self._buf: bytearray = bytearray()
+		self._running = False
+		self._parse_task: Optional[Task] = None
 		self.uuid = parser_uuid
 		self.data_queue = data_queue
 		self.packet_queue = packet_queue # 메시지 패킷 큐
-		self._running = False
-		self._parse_task: Optional[Task] = None
 		self.logger = getLogger(logger_name)
 
 		self.logger.debug(f"BaseParser 초기화: {data_queue=}, {packet_queue=}")
 
 
-	def parse(self) -> Any:
+	def parse(self) -> list[Any] | None:
 		"""파서에서 받은 바이트 데이터들을 조합 분석하여 패킷을 생성하여 메시지 패킷 큐에 입력합니다.
 			기본 동작: 바이트 데이터를 문자열로 변환하여 메시지 패킷 큐에 입력
 		"""
 		# 바이트 데이터를 문자열로 변환하여 패킷 큐에 입력
-		data = self._buf.decode('utf-8', errors='ignore')
-		self._buf = b"" # 버퍼 초기화
-		return data
+		try:
+			packet = self._buf.decode('utf-8')
+			self._buf.clear()
+			return [packet]
+		except UnicodeDecodeError:
+			self.logger.warning("UTF-8 디코딩 실패. 버퍼를 비웁니다.")
+			self._buf.clear()
+			return None
 
 
 	async def parse_handler(self) -> None:
 		""" 비동기적으로 데이터 큐에서 바이트 데이터를 읽어 메시지 패킷으로 분석/변환하여 패킷 큐에 입력
 			하위 파서 클래스에서 parse() 함수 내부에서 바이트 데이터를 목적에 맞게 패킷으로 파싱하여 패킷 큐에 입력
 		"""
-		self._buf = b"" # 내부 버퍼
 		while self._running: # 타임아웃을 두어 주기적으로 _running 상태 확인
 			try:
 				# data = await asyncio.wait_for(self.data_queue.get(), timeout=1.0)
@@ -86,10 +91,11 @@ class BaseParser(ABC):
 					if isinstance(data, str):
 						data = data.encode()
 					if isinstance(data, bytes):
-						self._buf += data
-						packet = self.parse()
-						if (packet):
-							await self.packet_queue.put((self.uuid, packet))
+						self._buf.extend(data)
+						packets = self.parse()
+						if (packets):
+							for packet in packets:
+								await self.packet_queue.put((self.uuid, packet))
 				finally:
 					self.data_queue.task_done()
 			# except asyncio.TimeoutError:
