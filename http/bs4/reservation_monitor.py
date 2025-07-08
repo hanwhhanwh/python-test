@@ -32,6 +32,7 @@ if (not project_folder in sys_path):
 
 
 # User's Package
+from lib.file_logger import createLogger
 from lib.json_util import load_json_conf
 from lib.kakao_message import KakaoMessage, KakaoMessageDef
 
@@ -119,6 +120,7 @@ class ReservationMonitor:
 		self.refresh_token			= ReservationMonitorDef.REFRESH_TOKEN
 		self.DND_start_hour			= ReservationMonitorDef.DND_START_HOUR
 		self.DND_duration_hours		= ReservationMonitorDef.DND_DURATION_HOURS
+		self.logger					= createLogger(log_filename='reservation_monitor', log_level=self.log_level, log_console=True)
 
 		setlocale(LC_TIME, 'ko_KR.UTF-8')
 
@@ -205,7 +207,7 @@ class ReservationMonitor:
 		try:
 			self.config, err_msg = load_json_conf(self.config_path)
 			if err_msg != '':
-				print(f'conf load fail!: {err_msg}')
+				self.logger.error(f'conf load fail!: {err_msg}')
 				return False
 
 			self.log_level				= self.config.get(ReservationMonitorKey.LOG_LEVEL,			ReservationMonitorDef.LOG_LEVEL)
@@ -223,7 +225,7 @@ class ReservationMonitor:
 			self.DND_duration_hours		= self.config.get(ReservationMonitorKey.DND_DURATION_HOURS,	ReservationMonitorDef.DND_DURATION_HOURS)
 			return True
 		except Exception as e:
-			print(f'Config load error: {e}')
+			self.logger.error(f'Config load error: {e}')
 			return False
 
 
@@ -317,21 +319,17 @@ class ReservationMonitor:
 		Args:
 			reservation_info (dict): 예약 가능한 날짜 정보 목록
 		"""
-		print(f"{datetime.now().isoformat()=}")
 		if (len(reservation_info) == 0):
-			print("예약 가능한 날짜가 없습니다.")
+			self.logger.info("예약 가능한 날짜가 없습니다.")
 			return
 
 		for url, reservation_list in reservation_info.items():
-			print("\n")
-			print("=" * 80)
-			print(f"Target URL = {url}")
-			print("=" * 80)
+			self.logger.info("\n", "=" * 80, f"Target URL = {url}", "=" * 80)
 
 			for date_info in reservation_list:
-				print(f"\n📅 {date_info['date']} ({date_info['weekday']})")
+				self.logger.info(f"\n📅 {date_info['date']} ({date_info['weekday']})")
 				for room in date_info['available_rooms']:
-					print(f"   • {room}")
+					self.logger.info(f"   • {room}")
 
 
 	def get_reservation_data(self, url: str) -> Optional[str]:
@@ -353,7 +351,7 @@ class ReservationMonitor:
 			response.raise_for_status()
 			return response.text
 		except Exception as e:
-			print(f"웹사이트 접근 오류: {e}")
+			self.logger.warning(f"웹사이트 접근 오류: {e}")
 			return None
 
 
@@ -371,7 +369,7 @@ class ReservationMonitor:
 		next_month = datetime(year, month + 1, 1) if (month != 12) else datetime(year + 1, month, 1)
 
 		for target_index, (url, is_monitoring) in enumerate(self.target_urls):
-			print(f"모니터링 중... ({target_index + 1}/{len(self.target_urls)})")
+			self.logger.info(f"모니터링 중... ({target_index + 1}/{len(self.target_urls)})")
 
 			if (is_monitoring != 1):
 				continue
@@ -401,7 +399,7 @@ class ReservationMonitor:
 		html_content = self.get_reservation_data(url)
 
 		if (html_content is None):
-			print(f"'{url}'에서 데이터를 가져올 수 없습니다.")
+			self.logger.warning(f"'{url}'에서 데이터를 가져올 수 없습니다.")
 			return []
 
 		# HTML 파싱 및 분석
@@ -426,7 +424,7 @@ class ReservationMonitor:
 		# 캘린더 테이블 찾기
 		calendar_table = soup.find('table', class_='calendar')
 		if not calendar_table:
-			print(f"캘린더 테이블을 찾을 수 없습니다.")
+			self.logger.warning(f"캘린더 테이블을 찾을 수 없습니다.")
 			return []
 
 		# 년도와 월 정보 추출
@@ -458,7 +456,7 @@ class ReservationMonitor:
 
 		self._init_kakao_msg()
 
-		print("객실 예약 정보 분석 중...")
+		self.logger.info("객실 예약 정보 분석 중...")
 
 		is_dnd = False
 		while (True):
@@ -489,11 +487,11 @@ class ReservationMonitor:
 					current_time = time()
 					if (current_time > self.MSG.access_token_expires_at):
 						self.MSG.refresh_access_token()
-						print(f'KAKAO token refreshed.')
+						self.logger.info(f'KAKAO token refreshed.')
 
 					self._send_kakao_message_to_me(results)
 			except Exception as e:
-				print(f"모니터링 중 오류 발생: {e}")
+				self.logger.error(f"모니터링 중 오류 발생: {e}")
 				return -1
 
 			sleep(self.minitoring_cycle + uniform(0, self.minitoring_cycle))
