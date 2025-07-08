@@ -17,6 +17,12 @@ from requests import get as request_get, post as request_post
 
 
 
+class KakaoMessageDef:
+	ACCESS_TOKEN_EXPIRES_AT: Final	= 21600
+	REFRESH_TOKEN_EXPIRE_AT: Final	= 5184000
+
+
+
 class KakaoMessageKey:
 	ACCESS_TOKEN: Final				= 'access_token'
 	ACCESS_TOKEN_EXPIRES_AT: Final	= 'expires_in'
@@ -100,9 +106,9 @@ class KakaoMessage:
 		response = request_post(url, data=data)
 		auto_token_json = response.json()
 		self.access_token = auto_token_json.get(KakaoMessageKey.ACCESS_TOKEN, '')
-		self.access_token_expires_at = time() + auto_token_json.get(KakaoMessageKey.ACCESS_TOKEN_EXPIRES_AT, 21600)
+		self.access_token_expires_at = time() + auto_token_json.get(KakaoMessageKey.ACCESS_TOKEN_EXPIRES_AT, KakaoMessageDef.ACCESS_TOKEN_EXPIRES_AT)
 		self.refresh_token = auto_token_json.get(KakaoMessageKey.REFRESH_TOKEN, '')
-		self.refresh_token_expires_at = time() + auto_token_json.get(KakaoMessageKey.REFRESH_TOKEN_EXPIRE_AT, 5184000)
+		self.refresh_token_expires_at = time() + auto_token_json.get(KakaoMessageKey.REFRESH_TOKEN_EXPIRE_AT, KakaoMessageDef.REFRESH_TOKEN_EXPIRE_AT)
 		return auto_token_json
 
 
@@ -173,7 +179,7 @@ class KakaoMessage:
 		response.raise_for_status()
 		json_result = response.json()
 		self.access_token = json_result.get(KakaoMessageKey.ACCESS_TOKEN, '')
-		self.access_token_expires_at = time() + json_result.get(KakaoMessageKey.ACCESS_TOKEN_EXPIRES_AT, 21600)
+		self.access_token_expires_at = time() + json_result.get(KakaoMessageKey.ACCESS_TOKEN_EXPIRES_AT, KakaoMessageDef.ACCESS_TOKEN_EXPIRES_AT)
 		self.set_access_token(self.access_token)
 		return True
 

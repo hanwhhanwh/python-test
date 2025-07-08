@@ -6,6 +6,7 @@
 # Original Packages
 from datetime import datetime, timedelta
 from locale import LC_TIME, setlocale
+from random import uniform
 from time import sleep, time
 from typing import List, Dict, Final, Tuple, Optional
 
@@ -32,7 +33,7 @@ if (not project_folder in sys_path):
 
 # User's Package
 from lib.json_util import load_json_conf
-from lib.kakao_message import KakaoMessage, KakaoMessageKey
+from lib.kakao_message import KakaoMessage, KakaoMessageDef
 
 
 
@@ -49,6 +50,8 @@ class ReservationMonitorKey:
 	REST_API_KEY: Final							= 'rest_api_key'
 	REFRESH_TOKEN: Final						= 'refresh_token'
 	REFRESH_TOKEN_EXPIRES_AT: Final				= 'refresh_token_expires_at'
+	DND_START_HOUR: Final						= 'DND_start_hour'
+	DND_DURATION_HOURS: Final					= 'DND_duration_hours'
 
 
 
@@ -63,7 +66,9 @@ class ReservationMonitorDef:
 	APP_ID: Final								= ''
 	APP_NAME: Final								= ''
 	REST_API_KEY: Final							= ''
-	REFRESH_TOKEN: Final							= ''
+	REFRESH_TOKEN: Final						= ''
+	DND_START_HOUR: Final						= 21
+	DND_DURATION_HOURS: Final					= 11
 
 
 
@@ -92,6 +97,8 @@ class ReservationMonitor:
 				, "rest_api_key":"my_app-rest_api_key"
 				, "token_key":"my_app-token_key"
 				, "refresh_token_expires_at":1756198598
+				, "DND_start_hour":21
+				, "DND_duration_hours":11
 			}
 
 		Args:
@@ -109,7 +116,9 @@ class ReservationMonitor:
 		self.app_id					= ReservationMonitorDef.APP_ID
 		self.app_name				= ReservationMonitorDef.APP_NAME
 		self.rest_api_key			= ReservationMonitorDef.REST_API_KEY
-		self.refresh_token				= ReservationMonitorDef.REFRESH_TOKEN
+		self.refresh_token			= ReservationMonitorDef.REFRESH_TOKEN
+		self.DND_start_hour			= ReservationMonitorDef.DND_START_HOUR
+		self.DND_duration_hours		= ReservationMonitorDef.DND_DURATION_HOURS
 
 		setlocale(LC_TIME, 'ko_KR.UTF-8')
 
@@ -210,6 +219,8 @@ class ReservationMonitor:
 			self.rest_api_key			= self.config.get(ReservationMonitorKey.REST_API_KEY,		ReservationMonitorDef.REST_API_KEY)
 			self.refresh_token			= self.config.get(ReservationMonitorKey.REFRESH_TOKEN,		ReservationMonitorDef.REFRESH_TOKEN)
 			self.refresh_token_expires_at = self.config.get(ReservationMonitorKey.REFRESH_TOKEN_EXPIRES_AT, 0)
+			self.DND_start_hour			= self.config.get(ReservationMonitorKey.DND_START_HOUR,		ReservationMonitorDef.DND_START_HOUR)
+			self.DND_duration_hours		= self.config.get(ReservationMonitorKey.DND_DURATION_HOURS,	ReservationMonitorDef.DND_DURATION_HOURS)
 			return True
 		except Exception as e:
 			print(f'Config load error: {e}')
@@ -449,7 +460,18 @@ class ReservationMonitor:
 
 		print("객실 예약 정보 분석 중...")
 
+		is_dnd = False
 		while (True):
+			now = datetime.now()
+			if (now.hour >= self.DND_start_hour):
+				is_dnd = True
+				dnd_end_time = now + timedelta(hours = self.DND_duration_hours)
+
+			if (is_dnd and (now < dnd_end_time)):
+				sleep(self.minitoring_cycle + uniform(0, self.minitoring_cycle))
+				continue
+
+			is_dnd = False
 			try:
 				self._load_config() # 모니터링 주기별로 설정을 다시 읽어들임
 				if self.config is None:
@@ -457,20 +479,24 @@ class ReservationMonitor:
 
 				self.MSG.refresh_token = self.refresh_token
 				self.MSG.refresh_token_expires_at = self.refresh_token_expires_at
-				current_time = time()
-				if ((current_time + 60) > self.MSG.access_token_expires_at):
-					self.MSG.refresh_access_token()
 
 				results = self.monitor_all_targets()
 
 				# 결과 출력
-				self.display_results(results)
-				self._send_kakao_message_to_me(results)
+				if (len(results) > 0):
+					self.display_results(results)
+
+					current_time = time()
+					if (current_time > self.MSG.access_token_expires_at):
+						self.MSG.refresh_access_token()
+						print(f'KAKAO token refreshed.')
+
+					self._send_kakao_message_to_me(results)
 			except Exception as e:
 				print(f"모니터링 중 오류 발생: {e}")
 				return -1
 
-			sleep(self.minitoring_cycle)
+			sleep(self.minitoring_cycle + uniform(0, self.minitoring_cycle))
 
 
 def main() -> int:
