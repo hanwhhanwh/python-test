@@ -122,6 +122,7 @@ class TestConnectionStability:
 
 		test_message = b"hello world"
 		await client.send(test_message)
+		await asyncio.sleep(0.5)
 
 		uuid, packet = await client.packet_queue.get()
 		assert isinstance(uuid, UUID)
