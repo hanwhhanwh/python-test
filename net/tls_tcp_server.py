@@ -19,56 +19,43 @@ if (not project_folder in sys_path):
 
 
 # User's Package
-from lib.tls_tcp6 import BaseParser, TlsTcp6Server
+from lib.tls_tcp6 import BaseParser, TlsTcp6Def, TlsTcp6Server
+
+
+logging.basicConfig(level=logging.DEBUG,
+					format='%(asctime)s - %(funcName)s:%(lineno)d - %(levelname)s - %(message)s')
 
 
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-
-
-async def main() -> None:
-	"""에코 서버 예제"""
-	logging.basicConfig(level=logging.INFO)
-
+async def main():
 	server = TlsTcp6Server(
-		host="::1",  # IPv6 localhost
-		port=8443,
-		cert_file="conf/secc_ee.crt",
-		key_file="conf/secc_ee.key",
-		ca_file="conf/root.crt"
+		cert_file="conf/server.crt",
+		key_file="conf/server.key",
+		ca_file="conf/root.crt",
 	)
 
-	# 파서 시작
-	parser = BaseParser(server.receive_queue)
-	parser_task = asyncio.create_task(parser.start_parsing())
-
-	# 서버 시작
-	server_task = asyncio.create_task(server.start_server())
-
-	# 에코 처리 루프
-	async def echo_handler():
-		while True:
-			try:
-				message = await asyncio.wait_for(parser.message_queue.get(), timeout=1.0)
-				# 수신된 데이터를 모든 클라이언트에게 에코
-				await server.broadcast(message)
-				print(f"에코: {message}")
-			except asyncio.TimeoutError:
-				continue
-			except Exception as e:
-				print(f"에코 처리 오류: {e}")
-
-	echo_task = asyncio.create_task(echo_handler())
-
 	try:
-		await asyncio.gather(server_task, parser_task, echo_task)
-	except KeyboardInterrupt:
-		print("서버 종료 중...")
-		parser.stop()
-		await server.stop_server()
+		# 서버 시작
+		await server.start()
+
+	except Exception as e:
+		print(f"Server interrupted: {e}")
+	finally:
+		# 서버 중지
+		# await server.stop()
+		print(f"Server stopped.")
 
 
+import tracemalloc
 
-if (__name__ == "__main__"):
+tracemalloc.start()
+try:
 	asyncio.run(main())
+except Exception as e:
+	print(f'error: {e}')
+
+snapshot = tracemalloc.take_snapshot()
+top_stats = snapshot.statistics('lineno')
+
+for stat in top_stats[:10]:
+    print(stat)
