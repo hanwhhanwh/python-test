@@ -307,6 +307,63 @@ class TestNetworkInstability:
 
 
 
+class TestResourceManagement:
+	"""메모리 누수 관련 리소스 관리 테스트"""
+
+	@pytest.mark.asyncio
+	async def test_client_dict_cleanup(self, server: TlsTcp6Server, client_factory):
+		"""16. 클라이언트 연결 해제 시 서버의 _clients 딕셔너리에서 완전히 제거되는지 검증"""
+		client = await client_factory(server.port)
+		await client.start()
+		await wait_for_client_count(server, 1)
+		client_uuid = list(server._clients.keys())[0]
+		assert client_uuid in server._clients
+
+		await client.close()
+		await wait_for_client_count(server, 0)
+		assert client_uuid not in server._clients
+
+	@pytest.mark.asyncio
+	async def test_task_cancellation_on_close(self, server: TlsTcp6Server, client_factory):
+		"""17. 연결 종료 시 관련된 모든 태스크(_rx, _tx, _parser)가 취소되는지 검증"""
+		client = await client_factory(server.port)
+		await client.start()
+		await wait_for_client_count(server, 1)
+
+		client_in_server = list(server._clients.values())[0]
+
+		# 태스크가 살아있는지 확인
+		server_tasks = client_in_server._tasks.copy()
+		client_tasks = client._tasks.copy()
+		assert all(not t.done() for t in server_tasks)
+		assert all(not t.done() for t in client_tasks)
+
+		await client.close()
+		await asyncio.sleep(0.2) # 정리 시간
+
+		# 모든 태스크가 종료(취소)되었는지 확인
+		assert all(t.done() for t in server_tasks)
+		assert all(t.done() for t in client_tasks)
+
+	@pytest.mark.asyncio
+	async def test_many_connections_no_leak(self, server: TlsTcp6Server, client_factory):
+		"""18. 다수의 클라이언트가 반복적으로 연결/해제해도 서버 리소스가 누수되지 않는지 검증"""
+		initial_tasks = len(asyncio.all_tasks())
+
+		for _ in range(10):
+			clients = await asyncio.gather(*(client_factory(server.port) for _ in range(5)))
+			await asyncio.gather(*(c.start() for c in clients))
+			await wait_for_client_count(server, 5, timeout=5)
+			await asyncio.gather(*(c.close() for c in clients))
+			await wait_for_client_count(server, 0, timeout=5)
+
+		assert len(server._clients) == 0
+		# 태스크 수가 과도하게 늘어나지 않았는지 확인 (정확한 수치 비교는 어려움)
+		final_tasks = len(asyncio.all_tasks())
+		assert final_tasks < initial_tasks + 20 # 약간의 여유를 둠
+
+
+
 # 이 스크립트를 직접 실행하면 pytest를 통해 테스트를 실행합니다.
 if (__name__ == "__main__"):
 	pytest.main(["-v", __file__])
