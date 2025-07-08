@@ -36,31 +36,6 @@ from lib.tls_tcp6 import BaseParser, TlsTcp6Client, TlsTcp6Def, TlsTcp6Key, TlsT
 
 
 
-
-### 테스트를 위한 커스텀 파서 정의
-class LengthPrefixedParser(BaseParser):
-	"""[4바이트 길이값][데이터] 형식의 메시지를 파싱하는 커스텀 파서"""
-	def parse(self) -> list[bytes] | None:
-		packets = []
-		while True:
-			if len(self._buf) < 4:
-				break # 길이 정보를 읽을 수 없음
-
-			msg_len = struct.unpack('!I', self._buf[:4])[0]
-
-			if len(self._buf) < 4 + msg_len:
-				break # 전체 메시지가 아직 도착하지 않음
-
-			packet = self._buf[4 : 4 + msg_len]
-			packets.append(packet)
-
-			# 처리된 메시지를 버퍼에서 제거
-			self._buf = self.self._buf[4 + msg_len:]
-
-		return packets if packets else None
-
-
-
 ### 테스트 유틸리티 함수
 async def wait_for_client_count(server: TlsTcp6Server, count: int, timeout: float = 3.0):
 	"""서버의 클라이언트 수가 특정 값에 도달할 때까지 대기"""
@@ -122,7 +97,6 @@ class TestConnectionStability:
 
 		test_message = b"hello world"
 		await client.send(test_message)
-		await asyncio.sleep(0.5)
 
 		uuid, packet = await client.packet_queue.get()
 		assert isinstance(uuid, UUID)
@@ -323,6 +297,7 @@ class TestResourceManagement:
 		await wait_for_client_count(server, 0)
 		assert client_uuid not in server._clients
 
+
 	@pytest.mark.asyncio
 	async def test_task_cancellation_on_close(self, server: TlsTcp6Server, client_factory):
 		"""17. 연결 종료 시 관련된 모든 태스크(_rx, _tx, _parser)가 취소되는지 검증"""
@@ -345,6 +320,7 @@ class TestResourceManagement:
 		assert all(t.done() for t in server_tasks)
 		assert all(t.done() for t in client_tasks)
 
+
 	@pytest.mark.asyncio
 	async def test_many_connections_no_leak(self, server: TlsTcp6Server, client_factory):
 		"""18. 다수의 클라이언트가 반복적으로 연결/해제해도 서버 리소스가 누수되지 않는지 검증"""
@@ -361,6 +337,137 @@ class TestResourceManagement:
 		# 태스크 수가 과도하게 늘어나지 않았는지 확인 (정확한 수치 비교는 어려움)
 		final_tasks = len(asyncio.all_tasks())
 		assert final_tasks < initial_tasks + 20 # 약간의 여유를 둠
+
+
+
+### 테스트를 위한 커스텀 파서 정의
+class LengthPrefixedParser(BaseParser):
+	"""[4바이트 길이값][데이터] 형식의 메시지를 파싱하는 커스텀 파서"""
+	def parse(self) -> list[bytes] | None:
+		packets = []
+		while True:
+			if len(self._buf) < 4:
+				break # 길이 정보를 읽을 수 없음
+
+			msg_len = struct.unpack('!I', self._buf[:4])[0]
+
+			if len(self._buf) < 4 + msg_len:
+				break # 전체 메시지가 아직 도착하지 않음
+
+			packet = self._buf[:4 + msg_len]
+			packets.append(bytes(packet))
+
+			# 처리된 메시지를 버퍼에서 제거
+			del self._buf[:4 + msg_len]
+
+		return packets if packets else None
+
+
+
+@pytest.mark.parametrize("server", [{"parser_class": LengthPrefixedParser}], indirect=True)
+class TestCustomParser:
+	"""커스텀 파서(LengthPrefixedParser) 동작 검증"""
+
+	@pytest.mark.asyncio
+	async def test_custom_parser_setup(self, server: TlsTcp6Server):
+		"""19. 서버와 클라이언트가 커스텀 파서로 초기화되었는지 검증"""
+		assert isinstance(server._parser, LengthPrefixedParser)
+		# 클라이언트 연결 시 서버의 파서 클래스를 상속받아 생성됨
+		# 이 테스트는 서버 측 파서만 확인
+
+
+	@pytest.mark.asyncio
+	async def test_simple_packet_parsing(self, server: TlsTcp6Server, client_factory):
+		"""20. 단일 패킷이 커스텀 파서로 정상 파싱되는지 검증"""
+		client = await client_factory(server.port, parser_class=LengthPrefixedParser)
+		await client.start()
+
+		message = b"custom_packet"
+		packet = struct.pack('!I', len(message)) + message
+		await client.send(packet)
+
+		_, received = await client.packet_queue.get()
+		assert received == packet
+
+
+	@pytest.mark.asyncio
+	async def test_split_packet_assembly(self, server: TlsTcp6Server, client_factory):
+		"""21. 나뉘어 전송된 패킷이 정상적으로 조합 및 파싱되는지 검증"""
+		client = await client_factory(server.port, parser_class=LengthPrefixedParser)
+		await client.start()
+
+		message = b"reassembled_message"
+		packet = struct.pack('!I', len(message)) + message
+
+		# 패킷을 3조각으로 나눠서 전송
+		await client.send(packet[:5])
+		await asyncio.sleep(0.1)
+		await client.send(packet[5:15])
+		await asyncio.sleep(0.1)
+		await client.send(packet[15:])
+
+		_, received = await client.packet_queue.get()
+		assert received == packet
+
+
+	@pytest.mark.asyncio
+	async def test_multiple_packets_in_one_send(self, server: TlsTcp6Server, client_factory):
+		"""22. 한 번의 전송에 포함된 여러 패킷이 모두 파싱되는지 검증"""
+		client = await client_factory(server.port, parser_class=LengthPrefixedParser)
+		await client.start()
+
+		msg1 = b"first"
+		msg2 = b"second_long_message"
+		pkt1 = struct.pack('!I', len(msg1)) + msg1
+		pkt2 = struct.pack('!I', len(msg2)) + msg2
+
+		await client.send(pkt1 + pkt2)
+
+		_, rcv1 = await client.packet_queue.get()
+		_, rcv2 = await client.packet_queue.get()
+
+		assert {rcv1, rcv2} == {pkt1, pkt2}
+
+
+	@pytest.mark.asyncio
+	async def test_incomplete_packet_is_buffered(self, server: TlsTcp6Server, client_factory):
+		"""23. 불완전한 패킷 수신 시, 파서가 처리를 보류하는지 검증"""
+		client = await client_factory(server.port, parser_class=LengthPrefixedParser)
+		await client.start()
+
+		message = b"wait_for_it"
+		packet = struct.pack('!I', len(message)) + message
+
+		await client.send(packet[:-1]) # 마지막 1바이트를 보내지 않음
+
+		# 큐에 데이터가 들어오면 안 됨
+		with pytest.raises(asyncio.TimeoutError):
+			await asyncio.wait_for(client.packet_queue.get(), timeout=0.5)
+
+		# 나머지 데이터 전송
+		await client.send(packet[-1:])
+		_, received = await asyncio.wait_for(client.packet_queue.get(), timeout=0.5)
+		assert received == packet
+
+
+	@pytest.mark.asyncio
+	async def test_invalid_length_packet(self, server: TlsTcp6Server, client_factory, caplog):
+		"""24. 길이가 잘못된 패킷 수신 시 파서와 서버가 안정적으로 동작하는지 검증"""
+		# 이 시나리오는 LengthPrefixedParser가 어떻게 에러를 처리하냐에 따라 달라짐
+		# 현재 구현은 단순히 버퍼에 데이터가 쌓이게 되므로, 서버 안정성만 체크
+		client = await client_factory(server.port, parser_class=LengthPrefixedParser)
+		await client.start()
+		await wait_for_client_count(server, 1)
+
+		# 실제 길이(5)보다 긴 길이(100)를 헤더에 기록
+		invalid_packet = struct.pack('!I', 100) + b'short'
+		await client.send(invalid_packet)
+
+		# 서버는 죽지 않아야 함
+		await asyncio.sleep(0.2)
+		assert len(server._clients) == 1
+		# 큐는 비어있어야 함
+		assert client.packet_queue.empty()
 
 
 

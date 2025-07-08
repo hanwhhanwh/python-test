@@ -438,8 +438,8 @@ class TlsTcp6Server(TlsTcp6Socket):
 				# 에코 기능: 해당 클라이언트로 다시 전송
 				if (uuid in self._clients):
 					client_socket = self._clients[uuid]
-					response_data = str(packet).encode('utf-8')
-					await client_socket.send(response_data)
+					# response_data = str(packet).encode('utf-8')
+					await client_socket.send(packet)
 					self.logger.info(f"패킷 에코됨 [to: {uuid}]")
 				else:
 					self.logger.warning(f"패킷을 보낸 클라이언트({uuid})를 찾을 수 없습니다.")
