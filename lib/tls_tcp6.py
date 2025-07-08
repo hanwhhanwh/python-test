@@ -439,6 +439,8 @@ class TlsTcp6Server(TlsTcp6Socket):
 				if (uuid in self._clients):
 					client_socket = self._clients[uuid]
 					# response_data = str(packet).encode('utf-8')
+					if (type(packet) is str):
+						packet = packet.encode('utf-8')
 					await client_socket.send(packet)
 					self.logger.info(f"패킷 에코됨 [to: {uuid}]")
 				else:

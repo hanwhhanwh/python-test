@@ -18,8 +18,6 @@ import struct
 # Third-party Packages
 import pytest
 
-import pytest_asyncio
-
 
 
 # User's Package 들을 포함시키기 위한 sys.path에 프로젝트 폴더 추가하기
@@ -32,7 +30,8 @@ if (not project_folder in sys_path):
 
 
 # User's Package
-from lib.tls_tcp6 import BaseParser, TlsTcp6Client, TlsTcp6Def, TlsTcp6Key, TlsTcp6Server
+from lib.tls_tcp6 import BaseParser, TlsTcp6Client, TlsTcp6Def, TlsTcp6Key, TlsTcp6Server, TlsTcp6Socket
+
 
 
 
@@ -50,7 +49,7 @@ async def wait_for_client_count(server: TlsTcp6Server, count: int, timeout: floa
 
 ### 테스트 클래스
 
-# @pytest.mark.timeout(10) # 각 테스트는 10초 내에 완료되어야 함
+# # @pytest.mark.timeout(10) # 각 테스트는 10초 내에 완료되어야 함
 class TestConnectionStability:
 	"""네트워크 연결 안정성 테스트"""
 
@@ -89,7 +88,7 @@ class TestConnectionStability:
 
 
 	@pytest.mark.asyncio
-	async def test_data_echo(self, server: TlsTcp6Server, client_factory):
+	async def test_data_echo(self, server: TlsTcp6Server, client_factory, caplog):
 		"""4. 클라이언트가 보낸 데이터가 서버로부터 정상적으로 에코되는지 검증"""
 		client = await client_factory(server.port)
 		await client.start()
@@ -98,6 +97,7 @@ class TestConnectionStability:
 		test_message = b"hello world"
 		await client.send(test_message)
 
+		print(caplog.text)
 		uuid, packet = await client.packet_queue.get()
 		assert isinstance(uuid, UUID)
 		assert packet.encode() == test_message
@@ -471,6 +471,113 @@ class TestCustomParser:
 
 
 
+class TestExtraCases:
+	"""다양한 엣지 케이스 및 추가 검증"""
+
+
+	@pytest.mark.asyncio
+	async def test_client_reconnection_after_server_restart(self, certs, client_factory, unused_tcp_port):
+		"""25. 서버 재시작 후 클라이언트가 재접속 가능한지 검증"""
+		# 1. 초기 서버 시작 및 클라이언트 접속
+		server1 = TlsTcp6Server(cert_file=certs["server_cert"], key_file=certs["server_key"], ca_file=certs["ca"], host="::1", port=unused_tcp_port)
+		s1_task = asyncio.create_task(server1.start())
+		await asyncio.sleep(0.1)
+		client = await client_factory(unused_tcp_port)
+		await client.start()
+		await wait_for_client_count(server1, 1)
+		await client.close()
+
+		# 2. 서버 종료
+		await server1.stop()
+		s1_task.cancel()
+
+		# 3. 새 서버 시작
+		server2 = TlsTcp6Server(cert_file=certs["server_cert"], key_file=certs["server_key"], ca_file=certs["ca"], host="::1", port=unused_tcp_port)
+		s2_task = asyncio.create_task(server2.start())
+		await asyncio.sleep(0.1)
+
+		# 4. 클라이언트 재접속
+		await client.start()
+		await wait_for_client_count(server2, 1)
+		assert len(server2._clients) == 1
+
+		await server2.stop()
+		s2_task.cancel()
+
+
+	@pytest.mark.asyncio
+	async def test_socket_object_inheritance(self, server, client_factory):
+		"""26. 서버에서 생성된 클라이언트 연결 객체가 지정된 클래스의 인스턴스인지 검증"""
+		class CustomSocket(TlsTcp6Socket):
+			pass
+
+		server._socket_class = CustomSocket
+		client = await client_factory(server.port)
+		await client.start()
+		await wait_for_client_count(server, 1)
+
+		client_conn = list(server._clients.values())[0]
+		assert isinstance(client_conn, CustomSocket)
+
+
+	@pytest.mark.asyncio
+	async def test_packet_queue_sharing(self, server: TlsTcp6Server, client_factory):
+		"""27. 여러 클라이언트가 하나의 패킷 큐를 정상적으로 공유하는지 검증"""
+		clients = await asyncio.gather(*(client_factory(server.port) for _ in range(3)))
+		await asyncio.gather(*(c.start() for c in clients))
+		await wait_for_client_count(server, 3)
+
+		for i, c in enumerate(clients):
+			await c.send(f"msg_{i}".encode())
+
+		received_msgs = set()
+		# for _ in range(3):
+		# 	uuid, packet = await server.packet_queue.get()
+		# 	received_msgs.add(packet)
+		for _, c in enumerate(clients):
+			uuid, packet = await c.packet_queue.get()
+			received_msgs.add(packet)
+
+		assert received_msgs == {"msg_0", "msg_1", "msg_2"}
+
+
+	@pytest.mark.asyncio
+	async def test_server_ref_in_client_socket(self, server: TlsTcp6Server, client_factory):
+		"""28. 서버에서 생성된 클라이언트 소켓이 서버 객체를 제대로 참조하는지 검증"""
+		client = await client_factory(server.port)
+		await client.start()
+		await wait_for_client_count(server, 1)
+
+		client_conn = list(server._clients.values())[0]
+		assert client_conn.server is server
+
+
+	@pytest.mark.asyncio
+	async def test_process_received_data_override(self, server: TlsTcp6Server, client_factory):
+		"""29. TlsTcp6Socket의 process_received_data 메소드 오버라이드가 동작하는지 검증"""
+		class EncryptingSocket(TlsTcp6Socket):
+			def process_received_data(self, data: bytes) -> bytes:
+				# 간단한 XOR '암호화'
+				return bytes([b ^ 0x42 for b in data])
+
+		server._socket_class = EncryptingSocket
+
+		client = await client_factory(server.port)
+		await client.start()
+		await wait_for_client_count(server, 1)
+
+		original_msg = b'secret'
+		# 서버가 수신 시 XOR 처리하므로, 클라이언트는 미리 XOR 처리된 데이터를 보내야 함
+		encrypted_msg = bytes([b ^ 0x42 for b in original_msg])
+		await client.send(encrypted_msg)
+
+		# 서버의 기본 파서는 UTF-8 변환 후 큐에 넣음
+		_, received = await client.packet_queue.get()
+		assert received == original_msg.decode('utf-8')
+
+
+
 # 이 스크립트를 직접 실행하면 pytest를 통해 테스트를 실행합니다.
 if (__name__ == "__main__"):
-	pytest.main(["-v", __file__])
+	pytest.main(["-v", "-s", __file__])
+	# pytest.main(["-s", __file__])
