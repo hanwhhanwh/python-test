@@ -324,7 +324,7 @@ class ReservationMonitor:
 			return
 
 		for url, reservation_list in reservation_info.items():
-			self.logger.info("\n", "=" * 80, f"Target URL = {url}", "=" * 80)
+			self.logger.info(f"\n{'=' * 80}\nTarget URL = {url}\n{'=' * 80}")
 
 			for date_info in reservation_list:
 				self.logger.info(f"\n📅 {date_info['date']} ({date_info['weekday']})")
