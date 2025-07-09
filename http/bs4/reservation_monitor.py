@@ -461,9 +461,10 @@ class ReservationMonitor:
 		is_dnd = False
 		while (True):
 			now = datetime.now()
-			if (now.hour >= self.DND_start_hour):
+			if ( (is_dnd == False) and (now.hour >= self.DND_start_hour) ):
 				is_dnd = True
 				dnd_end_time = now + timedelta(hours = self.DND_duration_hours)
+				self.logger.info(f"start DND: ~ {dnd_end_time.isoformat()}")
 
 			if (is_dnd and (now < dnd_end_time)):
 				sleep(self.minitoring_cycle + uniform(0, self.minitoring_cycle))
