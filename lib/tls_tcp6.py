@@ -65,6 +65,8 @@ class BaseParser(ABC):
 		"""파서에서 받은 바이트 데이터들을 조합 분석하여 패킷을 생성하여 메시지 패킷 큐에 입력합니다.
 			기본 동작: 바이트 데이터를 문자열로 변환하여 메시지 패킷 큐에 입력
 		"""
+		if (len(self._buf) == 0):
+			return None
 		# 바이트 데이터를 문자열로 변환하여 패킷 큐에 입력
 		try:
 			packet = self._buf.decode('utf-8')
