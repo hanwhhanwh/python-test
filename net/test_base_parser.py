@@ -298,10 +298,10 @@ class TestBaseParser:
 			(이 테스트를 위해 BaseParser와 동일한 파일에 CustomParser 정의 필요)
 		"""
 		class TestCustomParser(BaseParser):
-			def parse(self) -> Any:
+			def parse(self) -> list[Any]:
 				data = self._buf.decode('utf-8', errors='ignore')[::-1]
-				self._buf = b"" # 버퍼 초기화
-				return data
+				self._buf.clear() # 버퍼 초기화
+				return [data]
 
 		data_queue = Queue()
 		packet_queue = Queue()
@@ -427,14 +427,14 @@ class TestBaseParser:
 			BaseParser는 무조건 에코가 되므로, '\n' 문자로 메시지 패킷을 생성하도록 새로운 파서를 정의하여 시험합니다. 
 		"""
 		class TestCustomParser(BaseParser):
-			def parse(self) -> Any:
+			def parse(self) -> list[Any]:
 				lf_pos = self._buf.find(b'\n')
 				if (lf_pos < 0):
 					return None
 				data = self._buf[:lf_pos].decode('utf-8', errors='ignore')
 				self._buf = self._buf[lf_pos + 1:]
-				self._buf = b"" # 버퍼 초기화
-				return data
+				self._buf.clear() # 버퍼 초기화
+				return [data]
 
 		data_queue = Queue()
 		packet_queue = Queue()
@@ -470,7 +470,7 @@ class TestBaseParser:
 		23. 유효한 데이터와 유효하지 않은 (non-UTF8) 데이터가 혼합되어 들어왔을 때 파서의 강건성을 확인합니다.
 		"""
 		class TestCustomParser(BaseParser):
-			def parse(self) -> Any:
+			def parse(self) -> list[Any]:
 				lf_pos = self._buf.find(b'\n')
 				if (lf_pos < 0):
 					return None
@@ -479,9 +479,9 @@ class TestBaseParser:
 				except UnicodeDecodeError:
 					data = None
 					self.logger.error(f"수신된 bytes 데이터를 UTF-8로 디코딩 실패: {self._buf[:lf_pos]!r}")
-				self._buf = self._buf[lf_pos + 1:]
-				self._buf = b"" # 버퍼 초기화
-				return data
+				del self._buf[:lf_pos + 1]
+				# self._buf.clear() # 버퍼 초기화
+				return [data] if (data != None) else None
 
 		data_queue = Queue()
 		packet_queue = Queue()
