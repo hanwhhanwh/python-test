@@ -15,8 +15,6 @@ import uuid
 # Third-party Packages
 import pytest
 
-import pytest_asyncio
-
 
 
 # User's Package 들을 포함시키기 위한 sys.path에 프로젝트 폴더 추가하기
@@ -38,24 +36,6 @@ class TestBaseParser:
 	"""
 	BaseParser 클래스의 다양한 동작을 검증하는 테스트 스위트입니다.
 	"""
-
-	@pytest_asyncio.fixture
-	async def setup_parser(self):
-		"""
-		각 테스트마다 BaseParser 인스턴스와 큐를 설정하고 정리합니다.
-		"""
-		data_queue = Queue()
-		packet_queue = Queue()
-		parser = BaseParser(uuid.uuid4(), data_queue, packet_queue)
-		parser.start()
-		yield data_queue, packet_queue, parser
-		# 테스트 후 정리
-		await parser.stop()
-		# 큐 비우기 (선택 사항, 그러나 다른 테스트에 영향 줄 수 있으므로 권장)
-		while not data_queue.empty():
-			await data_queue.get()
-		while not packet_queue.empty():
-			await packet_queue.get()
 
 	@pytest.mark.asyncio
 	async def test_01_parser_initialization(self, setup_parser):
