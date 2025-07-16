@@ -4,11 +4,12 @@
 # date : 2025-07-07
 
 # Original Packages
-from typing import AsyncGenerator, Dict, Type
+from asyncio import Queue
+from typing import AsyncGenerator, Dict, Tuple, Type
 
 import asyncio
 import os
-import ssl
+import uuid
 
 
 
@@ -32,6 +33,25 @@ from lib.tls_tcp6 import BaseParser, TlsTcp6Client, TlsTcp6Def, TlsTcp6Key, TlsT
 
 
 
+@pytest_asyncio.fixture
+async def setup_parser():
+	"""
+	각 테스트마다 BaseParser 인스턴스와 큐를 설정하고 정리합니다.
+	"""
+	data_queue = Queue()
+	packet_queue = Queue()
+	parser = BaseParser(uuid.uuid4(), data_queue, packet_queue)
+	parser.start()
+	yield data_queue, packet_queue, parser
+	# 테스트 후 정리
+	await parser.stop()
+	# 큐 비우기 (선택 사항, 그러나 다른 테스트에 영향 줄 수 있으므로 권장)
+	while not data_queue.empty():
+		await data_queue.get()
+	while not packet_queue.empty():
+		await packet_queue.get()
+
+
 @pytest_asyncio.fixture(scope="session")
 def certs() -> Dict[str, str]:
 	"""테스트에 필요한 인증서 파일 경로를 제공하는 Fixture"""
@@ -40,7 +60,7 @@ def certs() -> Dict[str, str]:
 	required_files = ["server.crt", "server.key", "client.crt", "client.key", "root.crt"]
 	for f in required_files:
 		if (not os.path.exists(conf_path)):
-			pytest.fail(f"인증서 폴더가 없습니다: '{conf_path}'. README의 생성 가이드를 참고하세요.")
+			pytest_asyncio.fail(f"인증서 폴더가 없습니다: '{conf_path}'. README의 생성 가이드를 참고하세요.")
 
 	return {
 		"server_cert": str(f"{conf_path}/server.crt"),
