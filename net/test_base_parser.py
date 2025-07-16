@@ -27,7 +27,7 @@ if (not project_folder in sys_path):
 
 
 # User's Package
-from lib.tls_tcp6 import BaseParser
+from lib.base_parser import BaseParser
 
 
 

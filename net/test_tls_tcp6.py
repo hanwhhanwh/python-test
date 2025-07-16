@@ -30,7 +30,8 @@ if (not project_folder in sys_path):
 
 
 # User's Package
-from lib.tls_tcp6 import BaseParser, TlsTcp6Client, TlsTcp6Def, TlsTcp6Key, TlsTcp6Server, TlsTcp6Socket
+from lib.base_parser import BaseParser
+from lib.tls_tcp6 import TlsTcp6Client, TlsTcp6Def, TlsTcp6Key, TlsTcp6Server, TlsTcp6Socket
 
 
 
