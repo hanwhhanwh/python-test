@@ -42,6 +42,7 @@ class ReservationMonitorKey:
 	"""객실 예약 모니터링 관련 각종 키 상수 문자열 정의 클래스"""
 	LOG_LEVEL: Final							= 'log_level'
 	FILTER_WEEKDAY: Final						= 'filter_weekday'
+	SURELY_CHECK_DAY: Final						= 'surely_check_day'
 	EXCLUDE_ROOM: Final							= 'exclude_room'
 	TARGET: Final								= 'target'
 	MONITOR_NEXT_MONTH: Final					= 'monitor_next_month'
@@ -60,6 +61,7 @@ class ReservationMonitorDef:
 	"""객실 예약 모니터링 관련 각종 기본값 상수 정의 클래스"""
 	LOG_LEVEL: Final							= 20
 	FILTER_WEEKDAY: Final						= [0, 1, 2, 3, 4, 5, 6]
+	SURELY_CHECK_DAY: Final						= []
 	EXCLUDE_ROOM: Final							= ["^우"]
 	TARGET: Final								= []
 	MONITOR_NEXT_MONTH: Final					= 0
@@ -110,6 +112,7 @@ class ReservationMonitor:
 
 		self.log_level				= ReservationMonitorDef.LOG_LEVEL
 		self.filter_weekday			= ReservationMonitorDef.FILTER_WEEKDAY
+		self.surely_check_day		= ReservationMonitorDef.SURELY_CHECK_DAY
 		self.exclude_rooms			= ReservationMonitorDef.EXCLUDE_ROOM
 		self.is_monitor_next_month	= ReservationMonitorDef.MONITOR_NEXT_MONTH == 1
 		self.minitoring_cycle		= ReservationMonitorDef.MONITORING_CYCLE
@@ -212,6 +215,7 @@ class ReservationMonitor:
 
 			self.log_level				= self.config.get(ReservationMonitorKey.LOG_LEVEL,			ReservationMonitorDef.LOG_LEVEL)
 			self.filter_weekday			= self.config.get(ReservationMonitorKey.FILTER_WEEKDAY,		ReservationMonitorDef.FILTER_WEEKDAY)
+			self.surely_check_day		= self.config.get(ReservationMonitorKey.SURELY_CHECK_DAY,	ReservationMonitorDef.SURELY_CHECK_DAY)
 			self.exclude_rooms			= self.config.get(ReservationMonitorKey.EXCLUDE_ROOM,		ReservationMonitorDef.EXCLUDE_ROOM)
 			self.is_monitor_next_month	= self.config.get(ReservationMonitorKey.MONITOR_NEXT_MONTH,	ReservationMonitorDef.MONITOR_NEXT_MONTH) == 1
 			self.minitoring_cycle		= self.config.get(ReservationMonitorKey.MONITORING_CYCLE,	ReservationMonitorDef.MONITORING_CYCLE)
@@ -246,8 +250,9 @@ class ReservationMonitor:
 			date_obj = datetime(year, month, day)
 			weekday = date_obj.weekday()  # 0=월요일, 6=일요일
 
+			is_surely_day = date_obj.strftime('%Y-%m-%d') in self.surely_check_day
 			# 요일 필터링 처리
-			if (weekday not in self.filter_weekday):
+			if ((not is_surely_day) and (weekday not in self.filter_weekday)):
 				return None
 
 			weekday_name = date_obj.strftime('%a').encode('utf-8', 'surrogateescape').decode('utf-8', 'surrogateescape')
