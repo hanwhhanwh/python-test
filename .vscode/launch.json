@@ -10,9 +10,10 @@
 			"request": "launch",
 			"cwd": "${workspaceFolder}",
 			"program": "${relativeFile}",
-			"justMyCode": false,
-			"console": "integratedTerminal",
-			"args": ["https://www.youtube.com/watch?v=dmfDYYBeEbc", "--download_path", "C:/temp/youtube"],
+			// "justMyCode": false,
+			"console":"integratedTerminal",
+			// "args": ["https://www.youtube.com/watch?v=dmfDYYBeEbc", "--download_path", "C:/temp/youtube"],
+			// "cwd": "${fileDirname}"
 		},
 		{
 			"name": "Python: Flask",
