@@ -352,7 +352,7 @@ class ReservationMonitor:
 
 		for url, room_list in room_results.items():
 			for room_index in range(len(room_list) - 1, -1, -1):
-				room_info = room_results[room_index]
+				room_info = room_list[room_index]
 				reserved_date = room_info.get(ReservationMonitorKey.DATE)
 				reserved_info = self.reservation_day.get(reserved_date)
 				if (reserved_info is None):
@@ -365,7 +365,7 @@ class ReservationMonitor:
 					if (exclude_rooms == []):
 						# 이미 예약된 방이 있어서 더 이상 모든 형태의 방에 대한 정보를 알라지 않음 => 방 정보 삭제해야 함
 						is_filtered = True
-						del room_results[room_index]
+						del room_list[room_index]
 						continue
 					else:
 						compiled_exclude_rooms = [re.compile(p) for p in exclude_rooms]
@@ -380,7 +380,7 @@ class ReservationMonitor:
 								continue
 						if (len(room_texts) == 0):
 							is_filtered = True
-							del room_results[room_index]
+							del room_list[room_index]
 
 		return is_filtered
 
