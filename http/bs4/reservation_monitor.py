@@ -134,7 +134,12 @@ class ReservationMonitor:
 		self.refresh_token			= ReservationMonitorDef.REFRESH_TOKEN
 		self.DND_start_hour			= ReservationMonitorDef.DND_START_HOUR
 		self.DND_duration_hours		= ReservationMonitorDef.DND_DURATION_HOURS
-		self.logger					= createLogger(log_filename='reservation_monitor', log_level=self.log_level, log_console=True)
+		self.logger					= createLogger(
+				log_filename='reservation_monitor'
+				, log_level=self.log_level
+				, log_console=True
+				, log_format='%(asctime)s %(levelname)s %(lineno)d] %(message)s'
+			)
 
 		setlocale(LC_TIME, 'ko_KR.UTF-8')
 
