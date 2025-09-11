@@ -56,6 +56,7 @@ class ReservationMonitorKey:
 	DND_START_HOUR: Final						= 'DND_start_hour'
 	DND_DURATION_HOURS: Final					= 'DND_duration_hours'
 
+	URL_NO: Final[str]							= 'url_no'
 	DATE: Final[str]							= 'date'
 	DAY: Final[str]								= 'day'
 	WEEKDAY: Final[str]							= 'weekday'
@@ -329,6 +330,56 @@ class ReservationMonitor:
 			)
 
 
+	def check_resevation_day(self, room_results: dict) -> bool:
+		"""
+		이미 예약된 날짜의 방 정보를 삭제(필터링) 합니다.
+
+		Args:
+			room_results (dict): 예약가능한 방에 대한 정보 Dict
+
+		Returns:
+			bool: 예약된 날짜의 동일한 방 정보가 삭제(필터링) 여부
+		"""
+		if ( (self.reservation_day == {}) or (room_results == {}) ):
+			return False
+
+		is_filtered = False
+
+		for url, room_list in room_results.items():
+			for room_index in range(len(room_list) - 1, -1, -1):
+				room_info = room_results[room_index]
+				reserved_date = room_info.get(ReservationMonitorKey.DATE)
+				reserved_info = self.reservation_day.get(reserved_date)
+				if (reserved_info is None):
+					continue # 예약 가능한 객실의 날짜에 이미 예약된 정보가 없음
+
+				url_no = room_info.get(ReservationMonitorKey.URL_NO)
+				target_urls = reserved_info.get(ReservationMonitorKey.TARGET, [])
+				if ( (target_urls == []) or (url_no in target_urls) ):
+					exclude_rooms = reserved_info.get(ReservationMonitorKey.EXCLUDE_ROOM, [])
+					if (exclude_rooms == []):
+						# 이미 예약된 방이 있어서 더 이상 모든 형태의 방에 대한 정보를 알라지 않음 => 방 정보 삭제해야 함
+						is_filtered = True
+						del room_results[room_index]
+						continue
+					else:
+						compiled_exclude_rooms = [re.compile(p) for p in exclude_rooms]
+						#TODO: 미리 컴파일해 놓는 것이 필요할 수 있으나, 매번 새로 json 설정을 읽는 것도 고려해야 함
+						#컴파일을 매번 처리하지 않도록 하려면, json 설정 정보가 변경되었는지 검사하는 부분을 추가해야 함
+
+						room_texts = room_info.get(ReservationMonitorKey.AVAILABLE_ROOMS)
+						for text_index in range(len(room_texts) - 1, -1, -1):
+							room_text = room_texts[text_index]
+							if any(p.match(room_text) for p in compiled_exclude_rooms):
+								del room_texts[text_index]
+								continue
+						if (len(room_texts) == 0):
+							is_filtered = True
+							del room_results[room_index]
+
+		return is_filtered
+
+
 	def display_results(self, reservation_info: dict) -> None:
 		"""
 		결과를 보기 좋게 출력합니다.
@@ -393,22 +444,32 @@ class ReservationMonitor:
 				continue
 
 			current_month_url = current_month.strftime(url)
-			self.monitor_url(results, current_month_url)
+			self.monitor_url(results, current_month_url, target_index)
 
 			if (self.is_monitor_next_month):
 				next_month_url = next_month.strftime(url)
-				self.monitor_url(results, next_month_url)
+				self.monitor_url(results, next_month_url, target_index)
+
+		if ( (self.reservation_day.keys() != []) and (results != {}) ):
+			self.logger.info(f"이미 예약된 날짜 확인중...")
+			try:
+				is_filtered = self.check_resevation_day(results)
+				if (is_filtered):
+					self.logger.info(f"이미 예약된 날짜에 대한 예약 가능한 방 정보가 삭제되었습니다.")
+			except Exception as e:
+				self.logger.warning(f"check_resevation_day() error: {e}", exc_info=True)
 
 		return results
 
 
-	def monitor_url(self, results: dict, url: str) -> int:
+	def monitor_url(self, results: dict, url: str, url_index: int) -> int:
 		"""
 		단일 URL에 대한 모니터링 수행
 
 		Args:
 			results (dict): 예약 가능한 객실 정보를 담을 dict 객체
 			url (str): 모니터링할 URL
+			url_index (int): 모니터링할 URL 번호
 
 		Returns:
 			int: 예약 가능한 날짜 수
@@ -421,18 +482,19 @@ class ReservationMonitor:
 			return []
 
 		# HTML 파싱 및 분석
-		reservation_list = self.parse_room_availability(html_content)
+		reservation_list = self.parse_room_availability(html_content, url_index)
 		if (reservation_list != []):
 			results[url] = reservation_list
 		return len(reservation_list)
 
 
-	def parse_room_availability(self, html_content: str) -> List[Dict]:
+	def parse_room_availability(self, html_content: str, url_index: int) -> List[Dict]:
 		"""
 		HTML 내용을 파싱하여 객실 예약 정보를 분석합니다.
 
 		Args:
 			html_content (str): 파싱할 HTML 내용
+			url_index (int): 모니터링할 URL 번호
 
 		Returns:
 			List[Dict]: 예약 가능한 날짜 정보 리스트
@@ -456,6 +518,7 @@ class ReservationMonitor:
 		for cell in date_cells:
 			date_info = self._process_date_cell(cell, year, month)
 			if date_info:
+				date_info[ReservationMonitorKey.URL_NO] = url_index
 				available_dates.append(date_info)
 
 		return available_dates
