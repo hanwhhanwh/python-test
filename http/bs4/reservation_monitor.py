@@ -43,6 +43,7 @@ class ReservationMonitorKey:
 	LOG_LEVEL: Final							= 'log_level'
 	FILTER_WEEKDAY: Final						= 'filter_weekday'
 	SURELY_CHECK_DAY: Final						= 'surely_check_day'
+	RESERVATION_DAY: Final[str]					= "reservation_day"
 	EXCLUDE_ROOM: Final							= 'exclude_room'
 	TARGET: Final								= 'target'
 	MONITOR_NEXT_MONTH: Final					= 'monitor_next_month'
@@ -55,6 +56,11 @@ class ReservationMonitorKey:
 	DND_START_HOUR: Final						= 'DND_start_hour'
 	DND_DURATION_HOURS: Final					= 'DND_duration_hours'
 
+	DATE: Final[str]							= 'date'
+	DAY: Final[str]								= 'day'
+	WEEKDAY: Final[str]							= 'weekday'
+	AVAILABLE_ROOMS: Final[str]					= 'available_rooms'
+
 
 
 class ReservationMonitorDef:
@@ -62,6 +68,7 @@ class ReservationMonitorDef:
 	LOG_LEVEL: Final							= 20
 	FILTER_WEEKDAY: Final						= [0, 1, 2, 3, 4, 5, 6]
 	SURELY_CHECK_DAY: Final						= []
+	RESERVATION_DAY: Final[Dict]				= {}
 	EXCLUDE_ROOM: Final							= ["^우"]
 	TARGET: Final								= []
 	MONITOR_NEXT_MONTH: Final					= 0
@@ -89,6 +96,8 @@ class ReservationMonitor:
 			{
 				"log_level":20
 				, "filter_weekday":[4,5]
+				, "surely_check_day":[]
+				, "reservation_day":{}
 				, "monitor_next_month":1
 				, "monitoring_cycle":600
 				, "target":[
@@ -113,6 +122,7 @@ class ReservationMonitor:
 		self.log_level				= ReservationMonitorDef.LOG_LEVEL
 		self.filter_weekday			= ReservationMonitorDef.FILTER_WEEKDAY
 		self.surely_check_day		= ReservationMonitorDef.SURELY_CHECK_DAY
+		self.reservation_day		= ReservationMonitorDef.RESERVATION_DAY
 		self.exclude_rooms			= ReservationMonitorDef.EXCLUDE_ROOM
 		self.is_monitor_next_month	= ReservationMonitorDef.MONITOR_NEXT_MONTH == 1
 		self.minitoring_cycle		= ReservationMonitorDef.MONITORING_CYCLE
@@ -215,6 +225,7 @@ class ReservationMonitor:
 
 			self.log_level				= self.config.get(ReservationMonitorKey.LOG_LEVEL,			ReservationMonitorDef.LOG_LEVEL)
 			self.filter_weekday			= self.config.get(ReservationMonitorKey.FILTER_WEEKDAY,		ReservationMonitorDef.FILTER_WEEKDAY)
+			self.reservation_day		= self.config.get(ReservationMonitorKey.RESERVATION_DAY,	ReservationMonitorDef.RESERVATION_DAY)
 			self.surely_check_day		= self.config.get(ReservationMonitorKey.SURELY_CHECK_DAY,	ReservationMonitorDef.SURELY_CHECK_DAY)
 			self.exclude_rooms			= self.config.get(ReservationMonitorKey.EXCLUDE_ROOM,		ReservationMonitorDef.EXCLUDE_ROOM)
 			self.is_monitor_next_month	= self.config.get(ReservationMonitorKey.MONITOR_NEXT_MONTH,	ReservationMonitorDef.MONITOR_NEXT_MONTH) == 1
@@ -266,10 +277,10 @@ class ReservationMonitor:
 
 			if (available_rooms):
 				return {
-					'date': date_obj.strftime('%Y-%m-%d'),
-					'weekday': weekday_name,
-					'day': day,
-					'available_rooms': available_rooms
+					ReservationMonitorKey.DATE: date_obj.strftime('%Y-%m-%d'),
+					ReservationMonitorKey.WEEKDAY: weekday_name,
+					ReservationMonitorKey.DAY: day,
+					ReservationMonitorKey.AVAILABLE_ROOMS: available_rooms
 				}
 
 		except ValueError:
@@ -295,8 +306,9 @@ class ReservationMonitor:
 
 			message = ''
 			for date_info in reservation_list:
-				message += (f"\n📅 {date_info['date']} ({date_info['weekday']})")
-				for room in date_info['available_rooms']:
+				message += (f"\n📅 {date_info.get(ReservationMonitorKey.DATE)} ({date_info.get(ReservationMonitorKey.WEEKDAY)})")
+				avilable_rooms = date_info.get(ReservationMonitorKey.AVAILABLE_ROOMS, {})
+				for room in avilable_rooms:
 					message += (f"\n   • {room}")
 
 			if (message == ''):
@@ -332,8 +344,9 @@ class ReservationMonitor:
 			self.logger.info(f"\n{'=' * 80}\nTarget URL = {url}\n{'=' * 80}")
 
 			for date_info in reservation_list:
-				self.logger.info(f"\n📅 {date_info['date']} ({date_info['weekday']})")
-				for room in date_info['available_rooms']:
+				self.logger.info(f"\n📅 {date_info.get(ReservationMonitorKey.DATE)} ({date_info.get(ReservationMonitorKey.WEEKDAY)})")
+				available_rooms = date_info.get(ReservationMonitorKey.AVAILABLE_ROOMS, {})
+				for room in available_rooms:
 					self.logger.info(f"   • {room}")
 
 
