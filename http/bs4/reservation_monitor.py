@@ -380,6 +380,7 @@ class ReservationMonitor:
 								continue
 						if (len(room_texts) == 0):
 							is_filtered = True
+							self.logger.debug(f"삭제할 방정보: {room_info}")
 							del room_list[room_index]
 
 		return is_filtered
