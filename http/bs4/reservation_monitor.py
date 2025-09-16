@@ -4,6 +4,7 @@
 # date : 2025-06-23
 
 # Original Packages
+from copy import deepcopy
 from datetime import datetime, timedelta
 from locale import LC_TIME, setlocale
 from random import uniform
@@ -244,6 +245,8 @@ class ReservationMonitor:
 			self.refresh_token_expires_at = self.config.get(ReservationMonitorKey.REFRESH_TOKEN_EXPIRES_AT, 0)
 			self.DND_start_hour			= self.config.get(ReservationMonitorKey.DND_START_HOUR,		ReservationMonitorDef.DND_START_HOUR)
 			self.DND_duration_hours		= self.config.get(ReservationMonitorKey.DND_DURATION_HOURS,	ReservationMonitorDef.DND_DURATION_HOURS)
+
+			self.logger.setLevel(self.log_level)
 			return True
 		except Exception as e:
 			self.logger.error(f'Config load error: {e}')
@@ -350,6 +353,7 @@ class ReservationMonitor:
 
 		is_filtered = False
 
+		del_urls = []
 		for url, room_list in room_results.items():
 			for room_index in range(len(room_list) - 1, -1, -1):
 				room_info = room_list[room_index]
@@ -365,6 +369,7 @@ class ReservationMonitor:
 					if (exclude_rooms == []):
 						# 이미 예약된 방이 있어서 더 이상 모든 형태의 방에 대한 정보를 알라지 않음 => 방 정보 삭제해야 함
 						is_filtered = True
+						self.logger.debug(f"삭제할 방정보: {room_info}")
 						del room_list[room_index]
 						continue
 					else:
@@ -372,7 +377,8 @@ class ReservationMonitor:
 						#TODO: 미리 컴파일해 놓는 것이 필요할 수 있으나, 매번 새로 json 설정을 읽는 것도 고려해야 함
 						#컴파일을 매번 처리하지 않도록 하려면, json 설정 정보가 변경되었는지 검사하는 부분을 추가해야 함
 
-						room_texts = room_info.get(ReservationMonitorKey.AVAILABLE_ROOMS)
+						room_texts = room_info.get(ReservationMonitorKey.AVAILABLE_ROOMS, [])
+						room_texts_org = room_texts.copy() # 삭제를 대비하여 원본 복사해 두기
 						for text_index in range(len(room_texts) - 1, -1, -1):
 							room_text = room_texts[text_index]
 							if any(p.match(room_text) for p in compiled_exclude_rooms):
@@ -380,8 +386,16 @@ class ReservationMonitor:
 								continue
 						if (len(room_texts) == 0):
 							is_filtered = True
+							room_info[ReservationMonitorKey.AVAILABLE_ROOMS] = room_texts_org
 							self.logger.debug(f"삭제할 방정보: {room_info}")
 							del room_list[room_index]
+
+			if (len(room_list) == 0):
+				self.logger.debug(f"삭제할 주소 정보: {url}")
+				del_urls.append(url)
+
+		for url in del_urls:
+			del room_results[url]
 
 		return is_filtered
 
@@ -457,11 +471,11 @@ class ReservationMonitor:
 				self.monitor_url(results, next_month_url, target_index)
 
 		if ( (self.reservation_day.keys() != []) and (results != {}) ):
-			self.logger.info(f"이미 예약된 날짜 확인중...")
+			self.logger.debug(f"이미 예약된 날짜 확인중...")
 			try:
 				is_filtered = self.check_resevation_day(results)
 				if (is_filtered):
-					self.logger.info(f"이미 예약된 날짜에 대한 예약 가능한 방 정보가 삭제되었습니다.")
+					self.logger.debug(f"이미 예약된 날짜에 대한 예약 가능한 방 정보가 삭제되었습니다.")
 			except Exception as e:
 				self.logger.warning(f"check_resevation_day() error: {e}", exc_info=True)
 
