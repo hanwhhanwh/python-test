@@ -4,11 +4,12 @@
 #-*- coding: utf-8 -*-
 # use tab char size: 4
 
+# Original Packages
+from logging import getLogger, Formatter, Logger, StreamHandler, INFO, WARNING
+from logging.handlers import TimedRotatingFileHandler
 from os import path, remove, rename
 
 import gzip
-import logging
-import logging.handlers
 import os
 
 
@@ -40,9 +41,10 @@ class FileLogger:
 			, log_path = './logs'
 			, log_filename = 'logger'
 			, log_ext = '.log'
-			, log_level = logging.WARNING
+			, log_level = WARNING
 			, log_console = True
-			, logger_name = None):
+			, logger_name = None
+			, log_format = '%(asctime)s %(levelname)s %(module)s.%(lineno)d] %(message)s'):
 		"""Logger 클래스를 초기화합니다.
 
 		Args:
@@ -51,6 +53,7 @@ class FileLogger:
 			log_ext (string): 로깅 파일 기본 확장자 ; ".log"
 			log_level : 로깅 레벨 = logging.DEBUG (10), logging.INFO (20), logging.WARNING (30), logging.ERROR (40), logging.CRITICAL (50)
 			log_console (boolean): 콘솔로도 로깅 출력 여부
+			log_format (str): Formatter로 전달할 로그 포맷 문자열
 		"""
 
 		self.log_path		= log_path
@@ -58,6 +61,7 @@ class FileLogger:
 		self.log_ext		= log_ext
 		self.log_level		= log_level
 		self.log_console	= log_console
+		self.log_format		= log_format
 		self._logger_name	= logger_name
 
 		# folder create
@@ -74,26 +78,24 @@ class FileLogger:
 			logging.Logger: 로깅처리 실 객체
 		"""
 		# intialize logger
-		log = logging.getLogger(self._logger_name)
+		log = getLogger(self._logger_name)
 		if (len(log.handlers) > 0):
 			return log
 		log.setLevel(self.log_level) 
 
 		# Make file handler
 		LOG_FILENAME = self.log_path + '/' + self.log_filename + self.log_ext
-		file_handler = logging.handlers.TimedRotatingFileHandler(
+		file_handler = TimedRotatingFileHandler(
 			filename = LOG_FILENAME, when = 'midnight', interval = 1
 			, backupCount = 100, encoding = 'utf-8'
 		) # Rotate at midnight
 		file_handler.suffix = "%Y%m%d" # add file date
 
-		formatter = logging.Formatter(
-			'%(asctime)s %(levelname)s %(lineno)d] %(message)s'
-		)
+		formatter = Formatter(self.log_format)
 		log.addHandler(file_handler)
 		file_handler.setFormatter(formatter)
 		if (self.log_console == True):
-			stream_handler = logging.StreamHandler()
+			stream_handler = StreamHandler()
 			log.addHandler(stream_handler)
 			stream_handler.setFormatter(formatter)
 		#log.debug('created')
@@ -130,40 +132,43 @@ class FileLogger:
 def createLogger(log_path = './logs'
 			, log_filename = 'logger'
 			, log_ext = '.log'
-			, log_level = logging.WARNING
+			, log_level = WARNING
 			, log_console = True
-			, logger_name = None):
+			, logger_name = None
+			, log_format = '%(asctime)s %(levelname)s %(module)s.%(lineno)d] %(message)s') -> Logger:
 	"""Logger 클래스를 초기화합니다.
 
 	Args:
-		log_path (string): 로깅 파일이 쌓이는 폴더 경로 ; "./logs"
-		log_filename (string): 로깅 파일 이름 ; "logger"
-		log_ext (string): 로깅 파일 기본 확장자 ; ".log"
+		log_path (str): 로깅 파일이 쌓이는 폴더 경로 ; "./logs"
+		log_filename (str): 로깅 파일 이름 ; "logger"
+		log_ext (str): 로깅 파일 기본 확장자 ; ".log"
 		log_level : 로깅 레벨 = logging.DEBUG (10), logging.INFO (20), logging.WARNING (30), logging.ERROR (40), logging.CRITICAL (50)
 		log_console (boolean): 콘솔로도 로깅 출력 여부
+		log_format (str): Formatter로 전달할 로그 포맷 문자열
+
+	Returns:
+		Logger: 생성된 
 	"""
 
 	# intialize logger
-	log = logging.getLogger(logger_name)
+	log = getLogger(logger_name)
 	if (len(log.handlers) > 0):
 		return log
 	log.setLevel(log_level) 
 
 	# Make file handler
 	LOG_FILENAME = log_path + '/' + log_filename + log_ext
-	file_handler = logging.handlers.TimedRotatingFileHandler(
+	file_handler = TimedRotatingFileHandler(
 		filename = LOG_FILENAME, when = 'midnight', interval = 1
 		, backupCount = 100, encoding = 'utf-8'
 	) # Rotate at midnight
 	file_handler.suffix = "%Y%m%d" # add file date
 
-	formatter = logging.Formatter(
-		'%(asctime)s %(levelname)s %(lineno)d] %(message)s'
-	)
+	formatter = Formatter(log_format)
 	log.addHandler(file_handler)
 	file_handler.setFormatter(formatter)
 	if (log_console == True):
-		stream_handler = logging.StreamHandler()
+		stream_handler = StreamHandler()
 		log.addHandler(stream_handler)
 		stream_handler.setFormatter(formatter)
 	#log.debug('created')

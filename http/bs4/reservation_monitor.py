@@ -4,6 +4,7 @@
 # date : 2025-06-23
 
 # Original Packages
+from copy import deepcopy
 from datetime import datetime, timedelta
 from locale import LC_TIME, setlocale
 from random import uniform
@@ -43,6 +44,7 @@ class ReservationMonitorKey:
 	LOG_LEVEL: Final							= 'log_level'
 	FILTER_WEEKDAY: Final						= 'filter_weekday'
 	SURELY_CHECK_DAY: Final						= 'surely_check_day'
+	RESERVATION_DAY: Final[str]					= "reservation_day"
 	EXCLUDE_ROOM: Final							= 'exclude_room'
 	TARGET: Final								= 'target'
 	MONITOR_NEXT_MONTH: Final					= 'monitor_next_month'
@@ -55,6 +57,12 @@ class ReservationMonitorKey:
 	DND_START_HOUR: Final						= 'DND_start_hour'
 	DND_DURATION_HOURS: Final					= 'DND_duration_hours'
 
+	URL_NO: Final[str]							= 'url_no'
+	DATE: Final[str]							= 'date'
+	DAY: Final[str]								= 'day'
+	WEEKDAY: Final[str]							= 'weekday'
+	AVAILABLE_ROOMS: Final[str]					= 'available_rooms'
+
 
 
 class ReservationMonitorDef:
@@ -62,6 +70,7 @@ class ReservationMonitorDef:
 	LOG_LEVEL: Final							= 20
 	FILTER_WEEKDAY: Final						= [0, 1, 2, 3, 4, 5, 6]
 	SURELY_CHECK_DAY: Final						= []
+	RESERVATION_DAY: Final[Dict]				= {}
 	EXCLUDE_ROOM: Final							= ["^우"]
 	TARGET: Final								= []
 	MONITOR_NEXT_MONTH: Final					= 0
@@ -89,6 +98,8 @@ class ReservationMonitor:
 			{
 				"log_level":20
 				, "filter_weekday":[4,5]
+				, "surely_check_day":[]
+				, "reservation_day":{}
 				, "monitor_next_month":1
 				, "monitoring_cycle":600
 				, "target":[
@@ -113,6 +124,7 @@ class ReservationMonitor:
 		self.log_level				= ReservationMonitorDef.LOG_LEVEL
 		self.filter_weekday			= ReservationMonitorDef.FILTER_WEEKDAY
 		self.surely_check_day		= ReservationMonitorDef.SURELY_CHECK_DAY
+		self.reservation_day		= ReservationMonitorDef.RESERVATION_DAY
 		self.exclude_rooms			= ReservationMonitorDef.EXCLUDE_ROOM
 		self.is_monitor_next_month	= ReservationMonitorDef.MONITOR_NEXT_MONTH == 1
 		self.minitoring_cycle		= ReservationMonitorDef.MONITORING_CYCLE
@@ -123,7 +135,12 @@ class ReservationMonitor:
 		self.refresh_token			= ReservationMonitorDef.REFRESH_TOKEN
 		self.DND_start_hour			= ReservationMonitorDef.DND_START_HOUR
 		self.DND_duration_hours		= ReservationMonitorDef.DND_DURATION_HOURS
-		self.logger					= createLogger(log_filename='reservation_monitor', log_level=self.log_level, log_console=True)
+		self.logger					= createLogger(
+				log_filename='reservation_monitor'
+				, log_level=self.log_level
+				, log_console=True
+				, log_format='%(asctime)s %(levelname)s %(lineno)d] %(message)s'
+			)
 
 		setlocale(LC_TIME, 'ko_KR.UTF-8')
 
@@ -215,6 +232,7 @@ class ReservationMonitor:
 
 			self.log_level				= self.config.get(ReservationMonitorKey.LOG_LEVEL,			ReservationMonitorDef.LOG_LEVEL)
 			self.filter_weekday			= self.config.get(ReservationMonitorKey.FILTER_WEEKDAY,		ReservationMonitorDef.FILTER_WEEKDAY)
+			self.reservation_day		= self.config.get(ReservationMonitorKey.RESERVATION_DAY,	ReservationMonitorDef.RESERVATION_DAY)
 			self.surely_check_day		= self.config.get(ReservationMonitorKey.SURELY_CHECK_DAY,	ReservationMonitorDef.SURELY_CHECK_DAY)
 			self.exclude_rooms			= self.config.get(ReservationMonitorKey.EXCLUDE_ROOM,		ReservationMonitorDef.EXCLUDE_ROOM)
 			self.is_monitor_next_month	= self.config.get(ReservationMonitorKey.MONITOR_NEXT_MONTH,	ReservationMonitorDef.MONITOR_NEXT_MONTH) == 1
@@ -227,6 +245,8 @@ class ReservationMonitor:
 			self.refresh_token_expires_at = self.config.get(ReservationMonitorKey.REFRESH_TOKEN_EXPIRES_AT, 0)
 			self.DND_start_hour			= self.config.get(ReservationMonitorKey.DND_START_HOUR,		ReservationMonitorDef.DND_START_HOUR)
 			self.DND_duration_hours		= self.config.get(ReservationMonitorKey.DND_DURATION_HOURS,	ReservationMonitorDef.DND_DURATION_HOURS)
+
+			self.logger.setLevel(self.log_level)
 			return True
 		except Exception as e:
 			self.logger.error(f'Config load error: {e}')
@@ -266,10 +286,10 @@ class ReservationMonitor:
 
 			if (available_rooms):
 				return {
-					'date': date_obj.strftime('%Y-%m-%d'),
-					'weekday': weekday_name,
-					'day': day,
-					'available_rooms': available_rooms
+					ReservationMonitorKey.DATE: date_obj.strftime('%Y-%m-%d'),
+					ReservationMonitorKey.WEEKDAY: weekday_name,
+					ReservationMonitorKey.DAY: day,
+					ReservationMonitorKey.AVAILABLE_ROOMS: available_rooms
 				}
 
 		except ValueError:
@@ -295,8 +315,9 @@ class ReservationMonitor:
 
 			message = ''
 			for date_info in reservation_list:
-				message += (f"\n📅 {date_info['date']} ({date_info['weekday']})")
-				for room in date_info['available_rooms']:
+				message += (f"\n📅 {date_info.get(ReservationMonitorKey.DATE)} ({date_info.get(ReservationMonitorKey.WEEKDAY)})")
+				avilable_rooms = date_info.get(ReservationMonitorKey.AVAILABLE_ROOMS, {})
+				for room in avilable_rooms:
 					message += (f"\n   • {room}")
 
 			if (message == ''):
@@ -317,6 +338,68 @@ class ReservationMonitor:
 			)
 
 
+	def check_resevation_day(self, room_results: dict) -> bool:
+		"""
+		이미 예약된 날짜의 방 정보를 삭제(필터링) 합니다.
+
+		Args:
+			room_results (dict): 예약가능한 방에 대한 정보 Dict
+
+		Returns:
+			bool: 예약된 날짜의 동일한 방 정보가 삭제(필터링) 여부
+		"""
+		if ( (self.reservation_day == {}) or (room_results == {}) ):
+			return False
+
+		is_filtered = False
+
+		del_urls = []
+		for url, room_list in room_results.items():
+			for room_index in range(len(room_list) - 1, -1, -1):
+				room_info = room_list[room_index]
+				reserved_date = room_info.get(ReservationMonitorKey.DATE)
+				reserved_info = self.reservation_day.get(reserved_date)
+				if (reserved_info is None):
+					continue # 예약 가능한 객실의 날짜에 이미 예약된 정보가 없음
+
+				url_no = room_info.get(ReservationMonitorKey.URL_NO)
+				target_urls = reserved_info.get(ReservationMonitorKey.TARGET, [])
+				if ( (target_urls == []) or (url_no in target_urls) ):
+					exclude_rooms = reserved_info.get(ReservationMonitorKey.EXCLUDE_ROOM, [])
+					if (exclude_rooms == []):
+						# 이미 예약된 방이 있어서 더 이상 모든 형태의 방에 대한 정보를 알라지 않음 => 방 정보 삭제해야 함
+						is_filtered = True
+						self.logger.debug(f"삭제할 방정보: {room_info}")
+						del room_list[room_index]
+						continue
+					else:
+						compiled_exclude_rooms = [re.compile(p) for p in exclude_rooms]
+						#TODO: 미리 컴파일해 놓는 것이 필요할 수 있으나, 매번 새로 json 설정을 읽는 것도 고려해야 함
+						#컴파일을 매번 처리하지 않도록 하려면, json 설정 정보가 변경되었는지 검사하는 부분을 추가해야 함
+
+						room_texts = room_info.get(ReservationMonitorKey.AVAILABLE_ROOMS, [])
+						room_texts_org = room_texts.copy() # 삭제를 대비하여 원본 복사해 두기
+						for text_index in range(len(room_texts) - 1, -1, -1):
+							room_text = room_texts[text_index]
+							if any(p.match(room_text) for p in compiled_exclude_rooms):
+								del room_texts[text_index]
+								continue
+						if (len(room_texts) == 0):
+							is_filtered = True
+							room_info[ReservationMonitorKey.AVAILABLE_ROOMS] = room_texts_org
+							self.logger.debug(f"삭제할 방정보: {room_info}")
+							del room_list[room_index]
+
+			if (len(room_list) == 0):
+				self.logger.debug(f"삭제할 주소 정보: {url}")
+				del_urls.append(url)
+
+		for url in del_urls:
+			del room_results[url]
+
+		return is_filtered
+
+
 	def display_results(self, reservation_info: dict) -> None:
 		"""
 		결과를 보기 좋게 출력합니다.
@@ -332,8 +415,9 @@ class ReservationMonitor:
 			self.logger.info(f"\n{'=' * 80}\nTarget URL = {url}\n{'=' * 80}")
 
 			for date_info in reservation_list:
-				self.logger.info(f"\n📅 {date_info['date']} ({date_info['weekday']})")
-				for room in date_info['available_rooms']:
+				self.logger.info(f"\n📅 {date_info.get(ReservationMonitorKey.DATE)} ({date_info.get(ReservationMonitorKey.WEEKDAY)})")
+				available_rooms = date_info.get(ReservationMonitorKey.AVAILABLE_ROOMS, {})
+				for room in available_rooms:
 					self.logger.info(f"   • {room}")
 
 
@@ -380,22 +464,32 @@ class ReservationMonitor:
 				continue
 
 			current_month_url = current_month.strftime(url)
-			self.monitor_url(results, current_month_url)
+			self.monitor_url(results, current_month_url, target_index)
 
 			if (self.is_monitor_next_month):
 				next_month_url = next_month.strftime(url)
-				self.monitor_url(results, next_month_url)
+				self.monitor_url(results, next_month_url, target_index)
+
+		if ( (self.reservation_day.keys() != []) and (results != {}) ):
+			self.logger.debug(f"이미 예약된 날짜 확인중...")
+			try:
+				is_filtered = self.check_resevation_day(results)
+				if (is_filtered):
+					self.logger.debug(f"이미 예약된 날짜에 대한 예약 가능한 방 정보가 삭제되었습니다.")
+			except Exception as e:
+				self.logger.warning(f"check_resevation_day() error: {e}", exc_info=True)
 
 		return results
 
 
-	def monitor_url(self, results: dict, url: str) -> int:
+	def monitor_url(self, results: dict, url: str, url_index: int) -> int:
 		"""
 		단일 URL에 대한 모니터링 수행
 
 		Args:
 			results (dict): 예약 가능한 객실 정보를 담을 dict 객체
 			url (str): 모니터링할 URL
+			url_index (int): 모니터링할 URL 번호
 
 		Returns:
 			int: 예약 가능한 날짜 수
@@ -408,18 +502,19 @@ class ReservationMonitor:
 			return []
 
 		# HTML 파싱 및 분석
-		reservation_list = self.parse_room_availability(html_content)
+		reservation_list = self.parse_room_availability(html_content, url_index)
 		if (reservation_list != []):
 			results[url] = reservation_list
 		return len(reservation_list)
 
 
-	def parse_room_availability(self, html_content: str) -> List[Dict]:
+	def parse_room_availability(self, html_content: str, url_index: int) -> List[Dict]:
 		"""
 		HTML 내용을 파싱하여 객실 예약 정보를 분석합니다.
 
 		Args:
 			html_content (str): 파싱할 HTML 내용
+			url_index (int): 모니터링할 URL 번호
 
 		Returns:
 			List[Dict]: 예약 가능한 날짜 정보 리스트
@@ -443,6 +538,7 @@ class ReservationMonitor:
 		for cell in date_cells:
 			date_info = self._process_date_cell(cell, year, month)
 			if date_info:
+				date_info[ReservationMonitorKey.URL_NO] = url_index
 				available_dates.append(date_info)
 
 		return available_dates
