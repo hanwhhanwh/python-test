@@ -360,10 +360,14 @@ class ReservationMonitor:
 			return
 
 		for url, reservation_list in reservation_info.items():
-
 			message = ''
 			for date_info in reservation_list:
-				message += (f"<a href='{url}'>📅 {date_info.get(ReservationMonitorKey.DATE)} ({date_info.get(ReservationMonitorKey.WEEKDAY)})</a>\n")
+				reserveAgreement_url = url
+				if isinstance(url, str):
+					pos = url.find('reservRoom/')
+					if (pos > 1):
+						reserveAgreement_url = f"{url[:pos]}reservRoom/reserveAgreement/{date_info.get(ReservationMonitorKey.DATE).replace('-', '')}/I"
+				message += (f"<a href='{reserveAgreement_url}'>📅 {date_info.get(ReservationMonitorKey.DATE)} ({date_info.get(ReservationMonitorKey.WEEKDAY)})</a>\n")
 				avilable_rooms = date_info.get(ReservationMonitorKey.AVAILABLE_ROOMS, {})
 				for room in avilable_rooms:
 					message += (f"   • {room}\n")
@@ -383,7 +387,7 @@ class ReservationMonitor:
 			}
 			response = requests.post(telegram_api, data=payload)
 			# response.encoding = 'utf-8'
-			print(f"{response=}")
+			# print(f"{response=}")
 
 
 	def check_resevation_day(self, room_results: dict) -> bool:
