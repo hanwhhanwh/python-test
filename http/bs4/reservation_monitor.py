@@ -54,6 +54,8 @@ class ReservationMonitorKey:
 	REST_API_KEY: Final							= 'rest_api_key'
 	REFRESH_TOKEN: Final						= 'refresh_token'
 	REFRESH_TOKEN_EXPIRES_AT: Final				= 'refresh_token_expires_at'
+	TELEGRAM_BOT_TOKEN: Final					= 'telegram_bot_token'
+	TELEGRAM_CHAT_ID: Final						= 'telegram_chat_id'
 	DND_START_HOUR: Final						= 'DND_start_hour'
 	DND_DURATION_HOURS: Final					= 'DND_duration_hours'
 
@@ -79,6 +81,8 @@ class ReservationMonitorDef:
 	APP_NAME: Final								= ''
 	REST_API_KEY: Final							= ''
 	REFRESH_TOKEN: Final						= ''
+	TELEGRAM_BOT_TOKEN: Final					= ''
+	TELEGRAM_CHAT_ID: Final						= 0
 	DND_START_HOUR: Final						= 21
 	DND_DURATION_HOURS: Final					= 11
 
@@ -111,6 +115,8 @@ class ReservationMonitor:
 				, "rest_api_key":"my_app-rest_api_key"
 				, "token_key":"my_app-token_key"
 				, "refresh_token_expires_at":1756198598
+				, "telegram_bot_token":6198598:eVK8a62hbf_c
+				, "telegram_chat_id":-198598
 				, "DND_start_hour":21
 				, "DND_duration_hours":11
 			}
@@ -133,6 +139,8 @@ class ReservationMonitor:
 		self.app_name				= ReservationMonitorDef.APP_NAME
 		self.rest_api_key			= ReservationMonitorDef.REST_API_KEY
 		self.refresh_token			= ReservationMonitorDef.REFRESH_TOKEN
+		self.telegram_bot_token		= ReservationMonitorDef.TELEGRAM_BOT_TOKEN
+		self.telegram_chat_id		= ReservationMonitorDef.TELEGRAM_CHAT_ID
 		self.DND_start_hour			= ReservationMonitorDef.DND_START_HOUR
 		self.DND_duration_hours		= ReservationMonitorDef.DND_DURATION_HOURS
 		self.logger					= createLogger(
@@ -243,6 +251,8 @@ class ReservationMonitor:
 			self.rest_api_key			= self.config.get(ReservationMonitorKey.REST_API_KEY,		ReservationMonitorDef.REST_API_KEY)
 			self.refresh_token			= self.config.get(ReservationMonitorKey.REFRESH_TOKEN,		ReservationMonitorDef.REFRESH_TOKEN)
 			self.refresh_token_expires_at = self.config.get(ReservationMonitorKey.REFRESH_TOKEN_EXPIRES_AT, 0)
+			self.telegram_bot_token		= self.config.get(ReservationMonitorKey.TELEGRAM_BOT_TOKEN,	ReservationMonitorDef.TELEGRAM_BOT_TOKEN)
+			self.telegram_chat_id		= self.config.get(ReservationMonitorKey.TELEGRAM_CHAT_ID,	ReservationMonitorDef.TELEGRAM_CHAT_ID)
 			self.DND_start_hour			= self.config.get(ReservationMonitorKey.DND_START_HOUR,		ReservationMonitorDef.DND_START_HOUR)
 			self.DND_duration_hours		= self.config.get(ReservationMonitorKey.DND_DURATION_HOURS,	ReservationMonitorDef.DND_DURATION_HOURS)
 
@@ -306,13 +316,11 @@ class ReservationMonitor:
 		Args:
 			reservation_info (dict): 예약 가능한 날짜 정보 목록
 		"""
-
 		if (len(reservation_info) == 0):
 			return
 
 		message_type = "text" # 메시지 유형 - 텍스트
 		for url, reservation_list in reservation_info.items():
-
 			message = ''
 			for date_info in reservation_list:
 				message += (f"\n📅 {date_info.get(ReservationMonitorKey.DATE)} ({date_info.get(ReservationMonitorKey.WEEKDAY)})")
@@ -336,6 +344,46 @@ class ReservationMonitor:
 				link=link,
 				button_title=button_title,
 			)
+
+
+	def _send_telegram_chat_group(self, reservation_info: dict) -> None:
+		"""
+		이미 예약된 날짜의 방 정보를 텔레그림 그룹으로 메시지를 보냅니다.
+
+		Args:
+			reservation_info (dict): 예약 가능한 날짜 정보 목록
+
+		Returns:
+			bool: 예약된 날짜의 동일한 방 정보가 삭제(필터링) 여부
+		"""
+		if (len(reservation_info) == 0):
+			return
+
+		for url, reservation_list in reservation_info.items():
+
+			message = ''
+			for date_info in reservation_list:
+				message += (f"<a href='{url}'>📅 {date_info.get(ReservationMonitorKey.DATE)} ({date_info.get(ReservationMonitorKey.WEEKDAY)})</a>\n")
+				avilable_rooms = date_info.get(ReservationMonitorKey.AVAILABLE_ROOMS, {})
+				for room in avilable_rooms:
+					message += (f"   • {room}\n")
+
+			if (message == ''):
+				continue
+
+			headers = {
+				'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+			}
+			telegram_api = f'https://api.telegram.org/bot{self.telegram_bot_token}/sendMessage'
+			payload = {
+				'chat_id': self.telegram_chat_id,
+				'text': message,
+				'parse_mode': 'HTML',
+				'disable_web_page_preview': True,  # 링크 미리보기 비활성화
+			}
+			response = requests.post(telegram_api, data=payload)
+			# response.encoding = 'utf-8'
+			print(f"{response=}")
 
 
 	def check_resevation_day(self, room_results: dict) -> bool:
@@ -587,13 +635,14 @@ class ReservationMonitor:
 					self.display_results(results)
 
 					current_time = time()
-					if (current_time > self.MSG.access_token_expires_at):
-						self.MSG.refresh_access_token()
-						self.logger.info(f'KAKAO token refreshed.')
+					# if (current_time > self.MSG.access_token_expires_at):
+					# 	self.MSG.refresh_access_token()
+					# 	self.logger.info(f'KAKAO token refreshed.')
 
-					self._send_kakao_message_to_me(results)
+					# self._send_kakao_message_to_me(results)
+					self._send_telegram_chat_group(results)
 			except Exception as e:
-				self.logger.error(f"모니터링 중 오류 발생: {e}")
+				self.logger.error(f"모니터링 중 오류 발생: {e}", exc_info=True)
 				return -1
 
 			sleep(self.minitoring_cycle + uniform(0, self.minitoring_cycle))
