@@ -246,6 +246,7 @@ class ReservationMonitor:
 			self.is_monitor_next_month	= self.config.get(ReservationMonitorKey.MONITOR_NEXT_MONTH,	ReservationMonitorDef.MONITOR_NEXT_MONTH) == 1
 			self.minitoring_cycle		= self.config.get(ReservationMonitorKey.MONITORING_CYCLE,	ReservationMonitorDef.MONITORING_CYCLE)
 			self.target_urls			= self.config.get(ReservationMonitorKey.TARGET,				ReservationMonitorDef.TARGET)
+			# TODO: target_urls 감시 대상 정보를 배열이 아닌 Dict 형식으로 변경해 줘야 함
 			self.app_id					= self.config.get(ReservationMonitorKey.APP_ID,				ReservationMonitorDef.APP_ID)
 			self.app_name				= self.config.get(ReservationMonitorKey.APP_NAME,			ReservationMonitorDef.APP_NAME)
 			self.rest_api_key			= self.config.get(ReservationMonitorKey.REST_API_KEY,		ReservationMonitorDef.REST_API_KEY)
@@ -361,13 +362,16 @@ class ReservationMonitor:
 
 		for url, reservation_list in reservation_info.items():
 			message = ''
+			for (target_url, _, title, ) in self.target_urls:
+				if (url == target_url):
+					break
 			for date_info in reservation_list:
 				reserveAgreement_url = url
 				if isinstance(url, str):
 					pos = url.find('reservRoom/')
 					if (pos > 1):
 						reserveAgreement_url = f"{url[:pos]}reservRoom/reserveAgreement/{date_info.get(ReservationMonitorKey.DATE).replace('-', '')}/I"
-				message += (f"<a href='{reserveAgreement_url}'>📅 {date_info.get(ReservationMonitorKey.DATE)} ({date_info.get(ReservationMonitorKey.WEEKDAY)})</a>\n")
+				message += (f"{title}: <a href='{reserveAgreement_url}'>📅 {date_info.get(ReservationMonitorKey.DATE)} ({date_info.get(ReservationMonitorKey.WEEKDAY)})</a>\n")
 				avilable_rooms = date_info.get(ReservationMonitorKey.AVAILABLE_ROOMS, {})
 				for room in avilable_rooms:
 					message += (f"   • {room}\n")
@@ -464,7 +468,11 @@ class ReservationMonitor:
 			return
 
 		for url, reservation_list in reservation_info.items():
-			self.logger.info(f"\n{'=' * 80}\nTarget URL = {url}\n{'=' * 80}")
+			
+			for (target_url, _, title, ) in self.target_urls:
+				if (url == target_url):
+					break
+			self.logger.info(f"\n{'=' * 15}\n  {title}\n{'=' * 15}")
 
 			for date_info in reservation_list:
 				self.logger.info(f"\n📅 {date_info.get(ReservationMonitorKey.DATE)} ({date_info.get(ReservationMonitorKey.WEEKDAY)})")
@@ -509,11 +517,11 @@ class ReservationMonitor:
 		current_month = datetime(year, month, 1)
 		next_month = datetime(year, month + 1, 1) if (month != 12) else datetime(year + 1, month, 1)
 
-		for target_index, (url, is_monitoring) in enumerate(self.target_urls):
-			self.logger.info(f"모니터링 중... ({target_index + 1}/{len(self.target_urls)})")
-
+		for target_index, (url, is_monitoring, title) in enumerate(self.target_urls):
 			if (is_monitoring != 1):
 				continue
+
+			self.logger.info(f"{title} 모니터링 중... ({target_index + 1}/{len(self.target_urls)})")
 
 			current_month_url = current_month.strftime(url)
 			self.monitor_url(results, current_month_url, target_index)
