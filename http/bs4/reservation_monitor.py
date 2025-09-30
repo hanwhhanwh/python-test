@@ -107,8 +107,8 @@ class ReservationMonitor:
 				, "monitor_next_month":1
 				, "monitoring_cycle":600
 				, "target":[
-					["https://target1.url/cal/%Y/%m", 1]
-					, ["https://target2.url/cal/%Y/%m", 0]
+					["https://target1.url/cal/%Y/%m", 1, "주문진"]
+					, ["https://target2.url/cal/%Y/%m", 0, "정선 아라리"]
 				]
 				, "app_id":"1234"
 				, "app_name":"my_app-name"
@@ -607,7 +607,7 @@ class ReservationMonitor:
 		if self.config is None:
 			return -2
 
-		self._init_kakao_msg()
+		# self._init_kakao_msg()
 
 		self.logger.info("객실 예약 정보 분석 중...")
 
@@ -629,8 +629,8 @@ class ReservationMonitor:
 				if self.config is None:
 					return -2
 
-				self.MSG.refresh_token = self.refresh_token
-				self.MSG.refresh_token_expires_at = self.refresh_token_expires_at
+				# self.MSG.refresh_token = self.refresh_token
+				# self.MSG.refresh_token_expires_at = self.refresh_token_expires_at
 
 				results = self.monitor_all_targets()
 
@@ -638,7 +638,7 @@ class ReservationMonitor:
 				if (len(results) > 0):
 					self.display_results(results)
 
-					current_time = time()
+					# current_time = time()
 					# if (current_time > self.MSG.access_token_expires_at):
 					# 	self.MSG.refresh_access_token()
 					# 	self.logger.info(f'KAKAO token refreshed.')
