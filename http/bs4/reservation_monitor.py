@@ -46,7 +46,10 @@ class ReservationMonitorKey:
 	SURELY_CHECK_DAY: Final						= 'surely_check_day'
 	RESERVATION_DAY: Final[str]					= "reservation_day"
 	EXCLUDE_ROOM: Final							= 'exclude_room'
-	TARGET: Final								= 'target'
+	TARGET_LIST: Final							= 'target_list'
+	NAME: Final[str]							= 'name'
+	URL: Final[str]								= 'url'
+	IS_ACTIVE: Final[str]						= 'is_active'
 	MONITOR_NEXT_MONTH: Final					= 'monitor_next_month'
 	MONITORING_CYCLE: Final						= 'monitoring_cycle'
 	APP_ID: Final								= 'app_id'
@@ -74,7 +77,7 @@ class ReservationMonitorDef:
 	SURELY_CHECK_DAY: Final						= []
 	RESERVATION_DAY: Final[Dict]				= {}
 	EXCLUDE_ROOM: Final							= ["^우"]
-	TARGET: Final								= []
+	TARGET_LIST: Final								= []
 	MONITOR_NEXT_MONTH: Final					= 0
 	MONITORING_CYCLE: Final						= 600
 	APP_ID: Final								= ''
@@ -106,9 +109,9 @@ class ReservationMonitor:
 				, "reservation_day":{}
 				, "monitor_next_month":1
 				, "monitoring_cycle":600
-				, "target":[
-					["https://target1.url/cal/%Y/%m", 1, "주문진"]
-					, ["https://target2.url/cal/%Y/%m", 0, "정선 아라리"]
+				, "target_list":[
+					{"name":"target1","url":"https://target1.url/cal/%Y/%m","is_active":true},
+					{"name":"target2","url":"https://target2.url/cal/%Y/%m","is_active":true},
 				]
 				, "app_id":"1234"
 				, "app_name":"my_app-name"
@@ -134,7 +137,7 @@ class ReservationMonitor:
 		self.exclude_rooms			= ReservationMonitorDef.EXCLUDE_ROOM
 		self.is_monitor_next_month	= ReservationMonitorDef.MONITOR_NEXT_MONTH == 1
 		self.minitoring_cycle		= ReservationMonitorDef.MONITORING_CYCLE
-		self.target_urls			= ReservationMonitorDef.TARGET
+		self.target_list			= ReservationMonitorDef.TARGET_LIST
 		self.app_id					= ReservationMonitorDef.APP_ID
 		self.app_name				= ReservationMonitorDef.APP_NAME
 		self.rest_api_key			= ReservationMonitorDef.REST_API_KEY
@@ -245,8 +248,7 @@ class ReservationMonitor:
 			self.exclude_rooms			= self.config.get(ReservationMonitorKey.EXCLUDE_ROOM,		ReservationMonitorDef.EXCLUDE_ROOM)
 			self.is_monitor_next_month	= self.config.get(ReservationMonitorKey.MONITOR_NEXT_MONTH,	ReservationMonitorDef.MONITOR_NEXT_MONTH) == 1
 			self.minitoring_cycle		= self.config.get(ReservationMonitorKey.MONITORING_CYCLE,	ReservationMonitorDef.MONITORING_CYCLE)
-			self.target_urls			= self.config.get(ReservationMonitorKey.TARGET,				ReservationMonitorDef.TARGET)
-			# TODO: target_urls 감시 대상 정보를 배열이 아닌 Dict 형식으로 변경해 줘야 함
+			self.target_list			= self.config.get(ReservationMonitorKey.TARGET_LIST,		ReservationMonitorDef.TARGET_LIST)
 			self.app_id					= self.config.get(ReservationMonitorKey.APP_ID,				ReservationMonitorDef.APP_ID)
 			self.app_name				= self.config.get(ReservationMonitorKey.APP_NAME,			ReservationMonitorDef.APP_NAME)
 			self.rest_api_key			= self.config.get(ReservationMonitorKey.REST_API_KEY,		ReservationMonitorDef.REST_API_KEY)
@@ -362,7 +364,7 @@ class ReservationMonitor:
 
 		for url, reservation_list in reservation_info.items():
 			message = ''
-			for (target_url, _, title, ) in self.target_urls:
+			for (target_url, _, title, ) in self.target_list:
 				if (url == target_url):
 					break
 			for date_info in reservation_list:
@@ -419,7 +421,7 @@ class ReservationMonitor:
 					continue # 예약 가능한 객실의 날짜에 이미 예약된 정보가 없음
 
 				url_no = room_info.get(ReservationMonitorKey.URL_NO)
-				target_urls = reserved_info.get(ReservationMonitorKey.TARGET, [])
+				target_urls = reserved_info.get(ReservationMonitorKey.TARGET_LIST, [])
 				if ( (target_urls == []) or (url_no in target_urls) ):
 					exclude_rooms = reserved_info.get(ReservationMonitorKey.EXCLUDE_ROOM, [])
 					if (exclude_rooms == []):
@@ -469,7 +471,7 @@ class ReservationMonitor:
 
 		for url, reservation_list in reservation_info.items():
 			
-			for (target_url, _, title, ) in self.target_urls:
+			for (target_url, _, title, ) in self.target_list:
 				if (url == target_url):
 					break
 			self.logger.info(f"\n{'=' * 15}\n  {title}\n{'=' * 15}")
@@ -517,11 +519,11 @@ class ReservationMonitor:
 		current_month = datetime(year, month, 1)
 		next_month = datetime(year, month + 1, 1) if (month != 12) else datetime(year + 1, month, 1)
 
-		for target_index, (url, is_monitoring, title) in enumerate(self.target_urls):
+		for target_index, (url, is_monitoring, title) in enumerate(self.target_list):
 			if (is_monitoring != 1):
 				continue
 
-			self.logger.info(f"{title} 모니터링 중... ({target_index + 1}/{len(self.target_urls)})")
+			self.logger.info(f"{title} 모니터링 중... ({target_index + 1}/{len(self.target_list)})")
 
 			current_month_url = current_month.strftime(url)
 			self.monitor_url(results, current_month_url, target_index)
