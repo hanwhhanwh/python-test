@@ -46,7 +46,11 @@ class ReservationMonitorKey:
 	SURELY_CHECK_DAY: Final						= 'surely_check_day'
 	RESERVATION_DAY: Final[str]					= "reservation_day"
 	EXCLUDE_ROOM: Final							= 'exclude_room'
+	TARGET_LIST: Final							= 'target_list'
 	TARGET: Final								= 'target'
+	NAME: Final[str]							= 'name'
+	URL: Final[str]								= 'url'
+	IS_ACTIVE: Final[str]						= 'is_active'
 	MONITOR_NEXT_MONTH: Final					= 'monitor_next_month'
 	MONITORING_CYCLE: Final						= 'monitoring_cycle'
 	APP_ID: Final								= 'app_id'
@@ -58,6 +62,7 @@ class ReservationMonitorKey:
 	TELEGRAM_CHAT_ID: Final						= 'telegram_chat_id'
 	DND_START_HOUR: Final						= 'DND_start_hour'
 	DND_DURATION_HOURS: Final					= 'DND_duration_hours'
+	USER_AGENT: Final							= 'User-Agent'
 
 	URL_NO: Final[str]							= 'url_no'
 	DATE: Final[str]							= 'date'
@@ -73,10 +78,10 @@ class ReservationMonitorDef:
 	FILTER_WEEKDAY: Final						= [0, 1, 2, 3, 4, 5, 6]
 	SURELY_CHECK_DAY: Final						= []
 	RESERVATION_DAY: Final[Dict]				= {}
-	EXCLUDE_ROOM: Final							= ["^우"]
-	TARGET: Final								= []
+	EXCLUDE_ROOM: Final							= ["^우", "^캠핑", "^글램"]
+	TARGET_LIST: Final								= []
 	MONITOR_NEXT_MONTH: Final					= 0
-	MONITORING_CYCLE: Final						= 600
+	MONITORING_CYCLE: Final						= 150
 	APP_ID: Final								= ''
 	APP_NAME: Final								= ''
 	REST_API_KEY: Final							= ''
@@ -85,6 +90,7 @@ class ReservationMonitorDef:
 	TELEGRAM_CHAT_ID: Final						= 0
 	DND_START_HOUR: Final						= 21
 	DND_DURATION_HOURS: Final					= 11
+	USER_AGENT: Final							= "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
 
 
 
@@ -106,19 +112,20 @@ class ReservationMonitor:
 				, "reservation_day":{}
 				, "monitor_next_month":1
 				, "monitoring_cycle":600
-				, "target":[
-					["https://target1.url/cal/%Y/%m", 1, "주문진"]
-					, ["https://target2.url/cal/%Y/%m", 0, "정선 아라리"]
+				, "DND_start_hour":21
+				, "DND_duration_hours":11
+				, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+				, "target_list":[
+					{"name":"target1","url":"https://target1.url/cal/%Y/%m","is_active":true},
+					{"name":"target2","url":"https://target2.url/cal/%Y/%m","is_active":true},
 				]
+				, "telegram_bot_token":6198598:eVK8a62hbf_c
+				, "telegram_chat_id":-198598
 				, "app_id":"1234"
 				, "app_name":"my_app-name"
 				, "rest_api_key":"my_app-rest_api_key"
 				, "token_key":"my_app-token_key"
 				, "refresh_token_expires_at":1756198598
-				, "telegram_bot_token":6198598:eVK8a62hbf_c
-				, "telegram_chat_id":-198598
-				, "DND_start_hour":21
-				, "DND_duration_hours":11
 			}
 
 		Args:
@@ -134,15 +141,16 @@ class ReservationMonitor:
 		self.exclude_rooms			= ReservationMonitorDef.EXCLUDE_ROOM
 		self.is_monitor_next_month	= ReservationMonitorDef.MONITOR_NEXT_MONTH == 1
 		self.minitoring_cycle		= ReservationMonitorDef.MONITORING_CYCLE
-		self.target_urls			= ReservationMonitorDef.TARGET
+		self.DND_start_hour			= ReservationMonitorDef.DND_START_HOUR
+		self.DND_duration_hours		= ReservationMonitorDef.DND_DURATION_HOURS
+		self.user_agent				= ReservationMonitorDef.USER_AGENT
+		self.target_list			= ReservationMonitorDef.TARGET_LIST
+		self.telegram_bot_token		= ReservationMonitorDef.TELEGRAM_BOT_TOKEN
+		self.telegram_chat_id		= ReservationMonitorDef.TELEGRAM_CHAT_ID
 		self.app_id					= ReservationMonitorDef.APP_ID
 		self.app_name				= ReservationMonitorDef.APP_NAME
 		self.rest_api_key			= ReservationMonitorDef.REST_API_KEY
 		self.refresh_token			= ReservationMonitorDef.REFRESH_TOKEN
-		self.telegram_bot_token		= ReservationMonitorDef.TELEGRAM_BOT_TOKEN
-		self.telegram_chat_id		= ReservationMonitorDef.TELEGRAM_CHAT_ID
-		self.DND_start_hour			= ReservationMonitorDef.DND_START_HOUR
-		self.DND_duration_hours		= ReservationMonitorDef.DND_DURATION_HOURS
 		self.logger					= createLogger(
 				log_filename='reservation_monitor'
 				, log_level=self.log_level
@@ -245,17 +253,17 @@ class ReservationMonitor:
 			self.exclude_rooms			= self.config.get(ReservationMonitorKey.EXCLUDE_ROOM,		ReservationMonitorDef.EXCLUDE_ROOM)
 			self.is_monitor_next_month	= self.config.get(ReservationMonitorKey.MONITOR_NEXT_MONTH,	ReservationMonitorDef.MONITOR_NEXT_MONTH) == 1
 			self.minitoring_cycle		= self.config.get(ReservationMonitorKey.MONITORING_CYCLE,	ReservationMonitorDef.MONITORING_CYCLE)
-			self.target_urls			= self.config.get(ReservationMonitorKey.TARGET,				ReservationMonitorDef.TARGET)
-			# TODO: target_urls 감시 대상 정보를 배열이 아닌 Dict 형식으로 변경해 줘야 함
+			self.DND_start_hour			= self.config.get(ReservationMonitorKey.DND_START_HOUR,		ReservationMonitorDef.DND_START_HOUR)
+			self.DND_duration_hours		= self.config.get(ReservationMonitorKey.DND_DURATION_HOURS,	ReservationMonitorDef.DND_DURATION_HOURS)
+			self.user_agent				= self.config.get(ReservationMonitorKey.USER_AGENT,			ReservationMonitorDef.USER_AGENT)
+			self.target_list			= self.config.get(ReservationMonitorKey.TARGET_LIST,		ReservationMonitorDef.TARGET_LIST)
+			self.telegram_bot_token		= self.config.get(ReservationMonitorKey.TELEGRAM_BOT_TOKEN,	ReservationMonitorDef.TELEGRAM_BOT_TOKEN)
+			self.telegram_chat_id		= self.config.get(ReservationMonitorKey.TELEGRAM_CHAT_ID,	ReservationMonitorDef.TELEGRAM_CHAT_ID)
 			self.app_id					= self.config.get(ReservationMonitorKey.APP_ID,				ReservationMonitorDef.APP_ID)
 			self.app_name				= self.config.get(ReservationMonitorKey.APP_NAME,			ReservationMonitorDef.APP_NAME)
 			self.rest_api_key			= self.config.get(ReservationMonitorKey.REST_API_KEY,		ReservationMonitorDef.REST_API_KEY)
 			self.refresh_token			= self.config.get(ReservationMonitorKey.REFRESH_TOKEN,		ReservationMonitorDef.REFRESH_TOKEN)
 			self.refresh_token_expires_at = self.config.get(ReservationMonitorKey.REFRESH_TOKEN_EXPIRES_AT, 0)
-			self.telegram_bot_token		= self.config.get(ReservationMonitorKey.TELEGRAM_BOT_TOKEN,	ReservationMonitorDef.TELEGRAM_BOT_TOKEN)
-			self.telegram_chat_id		= self.config.get(ReservationMonitorKey.TELEGRAM_CHAT_ID,	ReservationMonitorDef.TELEGRAM_CHAT_ID)
-			self.DND_start_hour			= self.config.get(ReservationMonitorKey.DND_START_HOUR,		ReservationMonitorDef.DND_START_HOUR)
-			self.DND_duration_hours		= self.config.get(ReservationMonitorKey.DND_DURATION_HOURS,	ReservationMonitorDef.DND_DURATION_HOURS)
 
 			self.logger.setLevel(self.log_level)
 			return True
@@ -362,16 +370,14 @@ class ReservationMonitor:
 
 		for url, reservation_list in reservation_info.items():
 			message = ''
-			for (target_url, _, title, ) in self.target_urls:
-				if (url == target_url):
-					break
 			for date_info in reservation_list:
 				reserveAgreement_url = url
+				target = date_info.get(ReservationMonitorKey.TARGET)
 				if isinstance(url, str):
 					pos = url.find('reservRoom/')
 					if (pos > 1):
 						reserveAgreement_url = f"{url[:pos]}reservRoom/reserveAgreement/{date_info.get(ReservationMonitorKey.DATE).replace('-', '')}/I"
-				message += (f"{title}: <a href='{reserveAgreement_url}'>📅 {date_info.get(ReservationMonitorKey.DATE)} ({date_info.get(ReservationMonitorKey.WEEKDAY)})</a>\n")
+				message += (f"{target.get(ReservationMonitorKey.NAME)}: <a href='{reserveAgreement_url}'>📅 {date_info.get(ReservationMonitorKey.DATE)} ({date_info.get(ReservationMonitorKey.WEEKDAY)})</a>\n")
 				avilable_rooms = date_info.get(ReservationMonitorKey.AVAILABLE_ROOMS, {})
 				for room in avilable_rooms:
 					message += (f"   • {room}\n")
@@ -380,7 +386,7 @@ class ReservationMonitor:
 				continue
 
 			headers = {
-				'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+				ReservationMonitorKey.USER_AGENT: self.user_agent
 			}
 			telegram_api = f'https://api.telegram.org/bot{self.telegram_bot_token}/sendMessage'
 			payload = {
@@ -389,9 +395,9 @@ class ReservationMonitor:
 				'parse_mode': 'HTML',
 				'disable_web_page_preview': True,  # 링크 미리보기 비활성화
 			}
-			response = requests.post(telegram_api, data=payload)
-			# response.encoding = 'utf-8'
-			# print(f"{response=}")
+			response = requests.post(telegram_api, data=payload, headers=headers)
+			response.encoding = 'utf-8'
+			self.logger.debug(f"telegram: {response=}")
 
 
 	def check_resevation_day(self, room_results: dict) -> bool:
@@ -418,33 +424,31 @@ class ReservationMonitor:
 				if (reserved_info is None):
 					continue # 예약 가능한 객실의 날짜에 이미 예약된 정보가 없음
 
-				url_no = room_info.get(ReservationMonitorKey.URL_NO)
-				target_urls = reserved_info.get(ReservationMonitorKey.TARGET, [])
-				if ( (target_urls == []) or (url_no in target_urls) ):
-					exclude_rooms = reserved_info.get(ReservationMonitorKey.EXCLUDE_ROOM, [])
-					if (exclude_rooms == []):
-						# 이미 예약된 방이 있어서 더 이상 모든 형태의 방에 대한 정보를 알라지 않음 => 방 정보 삭제해야 함
+				# target = room_info.get(ReservationMonitorKey.TARGET)
+				exclude_rooms = reserved_info.get(ReservationMonitorKey.EXCLUDE_ROOM, [])
+				if (exclude_rooms == []):
+					# 이미 예약된 방이 있어서 더 이상 모든 형태의 방에 대한 정보를 알라지 않음 => 방 정보 삭제해야 함
+					is_filtered = True
+					self.logger.debug(f"삭제할 방정보: {room_info}")
+					del room_list[room_index]
+					continue
+				else:
+					compiled_exclude_rooms = [re.compile(p) for p in exclude_rooms]
+					#TODO: 미리 컴파일해 놓는 것이 필요할 수 있으나, 매번 새로 json 설정을 읽는 것도 고려해야 함
+					#컴파일을 매번 처리하지 않도록 하려면, json 설정 정보가 변경되었는지 검사하는 부분을 추가해야 함
+
+					room_texts = room_info.get(ReservationMonitorKey.AVAILABLE_ROOMS, [])
+					room_texts_org = room_texts.copy() # 삭제를 대비하여 원본 복사해 두기
+					for text_index in range(len(room_texts) - 1, -1, -1):
+						room_text = room_texts[text_index]
+						if any(p.match(room_text) for p in compiled_exclude_rooms):
+							del room_texts[text_index]
+							continue
+					if (len(room_texts) == 0):
 						is_filtered = True
+						room_info[ReservationMonitorKey.AVAILABLE_ROOMS] = room_texts_org
 						self.logger.debug(f"삭제할 방정보: {room_info}")
 						del room_list[room_index]
-						continue
-					else:
-						compiled_exclude_rooms = [re.compile(p) for p in exclude_rooms]
-						#TODO: 미리 컴파일해 놓는 것이 필요할 수 있으나, 매번 새로 json 설정을 읽는 것도 고려해야 함
-						#컴파일을 매번 처리하지 않도록 하려면, json 설정 정보가 변경되었는지 검사하는 부분을 추가해야 함
-
-						room_texts = room_info.get(ReservationMonitorKey.AVAILABLE_ROOMS, [])
-						room_texts_org = room_texts.copy() # 삭제를 대비하여 원본 복사해 두기
-						for text_index in range(len(room_texts) - 1, -1, -1):
-							room_text = room_texts[text_index]
-							if any(p.match(room_text) for p in compiled_exclude_rooms):
-								del room_texts[text_index]
-								continue
-						if (len(room_texts) == 0):
-							is_filtered = True
-							room_info[ReservationMonitorKey.AVAILABLE_ROOMS] = room_texts_org
-							self.logger.debug(f"삭제할 방정보: {room_info}")
-							del room_list[room_index]
 
 			if (len(room_list) == 0):
 				self.logger.debug(f"삭제할 주소 정보: {url}")
@@ -468,17 +472,18 @@ class ReservationMonitor:
 			return
 
 		for url, reservation_list in reservation_info.items():
-			
-			for (target_url, _, title, ) in self.target_urls:
-				if (url == target_url):
-					break
-			self.logger.info(f"\n{'=' * 15}\n  {title}\n{'=' * 15}")
+			if (len(reservation_list) < 1):
+				continue
+			date_info = reservation_list[0]
+			target = date_info.get(ReservationMonitorKey.TARGET)
+			reservation_list_str = f"\n{'=' * 22}\n  {target.get(ReservationMonitorKey.NAME, 'name fail')} {url[-7:]}\n{'=' * 22}"
 
 			for date_info in reservation_list:
-				self.logger.info(f"\n📅 {date_info.get(ReservationMonitorKey.DATE)} ({date_info.get(ReservationMonitorKey.WEEKDAY)})")
+				reservation_list_str += f"\n📅 {date_info.get(ReservationMonitorKey.DATE)} ({date_info.get(ReservationMonitorKey.WEEKDAY)})"
 				available_rooms = date_info.get(ReservationMonitorKey.AVAILABLE_ROOMS, {})
 				for room in available_rooms:
-					self.logger.info(f"   • {room}")
+					reservation_list_str += f"\n   • {room}"
+				self.logger.info(reservation_list_str)
 
 
 	def get_reservation_data(self, url: str) -> Optional[str]:
@@ -493,7 +498,7 @@ class ReservationMonitor:
 		"""
 		try:
 			headers = {
-				'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+				ReservationMonitorKey.USER_AGENT: self.user_agent
 			}
 			response = requests.get(url, headers=headers)
 			response.encoding = 'utf-8'
@@ -504,7 +509,7 @@ class ReservationMonitor:
 			return None
 
 
-	def monitor_all_targets(self) -> Dict[str, List[Dict]]:
+	def monitor_all_target(self) -> Dict[str, List[Dict]]:
 		"""
 		모든 대상 URL에 대한 모니터링 수행
 
@@ -517,18 +522,17 @@ class ReservationMonitor:
 		current_month = datetime(year, month, 1)
 		next_month = datetime(year, month + 1, 1) if (month != 12) else datetime(year + 1, month, 1)
 
-		for target_index, (url, is_monitoring, title) in enumerate(self.target_urls):
-			if (is_monitoring != 1):
+		target_list_len = len(self.target_list)
+		for target_index, target in enumerate(self.target_list):
+			if (not target.get(ReservationMonitorKey.IS_ACTIVE, False)):
 				continue
 
-			self.logger.info(f"{title} 모니터링 중... ({target_index + 1}/{len(self.target_urls)})")
+			self.logger.info(f"{target.get(ReservationMonitorKey.NAME, '')} 모니터링 중... ({target_index + 1}/{target_list_len})")
 
-			current_month_url = current_month.strftime(url)
-			self.monitor_url(results, current_month_url, target_index)
+			self.monitor_target(results, target, current_month)
 
 			if (self.is_monitor_next_month):
-				next_month_url = next_month.strftime(url)
-				self.monitor_url(results, next_month_url, target_index)
+				self.monitor_target(results, target, next_month)
 
 		if ( (self.reservation_day.keys() != []) and (results != {}) ):
 			self.logger.debug(f"이미 예약된 날짜 확인중...")
@@ -542,18 +546,20 @@ class ReservationMonitor:
 		return results
 
 
-	def monitor_url(self, results: dict, url: str, url_index: int) -> int:
+	def monitor_target(self, results: dict, target: dict, monitor_month: datetime) -> int:
 		"""
 		단일 URL에 대한 모니터링 수행
 
 		Args:
 			results (dict): 예약 가능한 객실 정보를 담을 dict 객체
-			url (str): 모니터링할 URL
-			url_index (int): 모니터링할 URL 번호
+			target (dict): 감시 대상에 대한 세부 정보 객체
+			monitor_month (datetime): 감시할 월정보
 
 		Returns:
 			int: 예약 가능한 날짜 수
 		"""
+		target_url = target.get(ReservationMonitorKey.URL)
+		url = monitor_month.strftime(target_url)
 		# 웹사이트에서 데이터 가져오기
 		html_content = self.get_reservation_data(url)
 
@@ -562,19 +568,19 @@ class ReservationMonitor:
 			return []
 
 		# HTML 파싱 및 분석
-		reservation_list = self.parse_room_availability(html_content, url_index)
+		reservation_list = self.parse_room_availability(html_content, target)
 		if (reservation_list != []):
-			results[url] = reservation_list
+			results[url] = reservation_list # url로 하는 것이 맞나?
 		return len(reservation_list)
 
 
-	def parse_room_availability(self, html_content: str, url_index: int) -> List[Dict]:
+	def parse_room_availability(self, html_content: str, target: dict) -> List[Dict]:
 		"""
 		HTML 내용을 파싱하여 객실 예약 정보를 분석합니다.
 
 		Args:
 			html_content (str): 파싱할 HTML 내용
-			url_index (int): 모니터링할 URL 번호
+			target (dict): 감시 대상에 대한 세부 정보 객체
 
 		Returns:
 			List[Dict]: 예약 가능한 날짜 정보 리스트
@@ -598,7 +604,7 @@ class ReservationMonitor:
 		for cell in date_cells:
 			date_info = self._process_date_cell(cell, year, month)
 			if date_info:
-				date_info[ReservationMonitorKey.URL_NO] = url_index
+				date_info[ReservationMonitorKey.TARGET] = target
 				available_dates.append(date_info)
 
 		return available_dates
@@ -640,7 +646,7 @@ class ReservationMonitor:
 				# self.MSG.refresh_token = self.refresh_token
 				# self.MSG.refresh_token_expires_at = self.refresh_token_expires_at
 
-				results = self.monitor_all_targets()
+				results = self.monitor_all_target()
 
 				# 결과 출력
 				if (len(results) > 0):
