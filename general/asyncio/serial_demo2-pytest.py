@@ -4,12 +4,12 @@
 # date : 2025-10-16
 
 # Original Packages
-from asyncio import AbstractEventLoop, get_running_loop, Protocol, run, sleep, \
-					StreamReader, StreamWriter, wait_for
+from asyncio import get_running_loop, run, sleep, wait_for, \
+					AbstractEventLoop, Protocol, Queue, StreamReader, StreamWriter
 from io import BytesIO
 from time import time
 from typing import Any, Coroutine, Final, Generator, Optional, Tuple
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 
@@ -24,66 +24,65 @@ from serial_demo2 import main_serial, SERIAL_BAUDRATE, SERIAL_PORT
 
 
 class MockStreamReader:
-	"""
-	asyncio.StreamReader의 read() 메서드를 모방하는 클래스.
-	"""
-	def __init__(self: 'MockStreamReader', buffer: BytesIO) -> None:
-		"""
-		MockStreamReader 객체를 초기화합니다.
+	"""AsyncMock 기반 StreamReader 모의 클래스"""
 
+	def __init__(self, initial_data: Optional[bytes] = None) -> None:
+		"""
 		Args:
-			buffer: 읽어들일 데이터가 담긴 BytesIO 객체.
+			initial_data (Optional[bytes]): 초기 버퍼 데이터
 		"""
-		self._buffer: BytesIO = buffer
-		self._read_call_count: int = 0
+		self._queue = Queue()
+		self._buffer = BytesIO(initial_data if initial_data else b"")
+		# read 메서드를 AsyncMock으로 정의
+		self.read = AsyncMock(side_effect=self._read_impl)
 
 
-	async def read(self: 'MockStreamReader', n: int) -> bytes:
+	async def _read_impl(self, n: int = -1) -> bytes:
 		"""
-		데이터 읽기를 모방합니다.
-
-		Args:
-			n: 읽을 최대 바이트 수.
-
-		Returns:
-			bytes: 버퍼에서 읽어들인 데이터.
+		내부 BytesIO에서 실제로 읽기 동작을 수행하는 함수
+		AsyncMock이 side_effect로 호출
 		"""
-		self._read_call_count += 1
-
-		print(f"read called [{self._read_call_count}] {time()}")
-
 		data = self._buffer.read(n)
 		if (data == b''):
-			# 두 번째 호출부터는 TimeoutError를 발생시키기 위해 asyncio.wait_for의 타임아웃을 유발합니다.
-			# reader.read(1024)가 타임아웃(1초)에 걸리도록 합니다.
-			# 실제 시나리오에서는 reader.read()가 블록되거나 데이터를 반환해야 하지만,
-			# 테스트 로직상 타임아웃을 유발하여 writer.write()가 호출되는지 확인합니다.
-			await sleep(2) # 1초 타임아웃을 초과하도록 대기
+			data = await self._queue.get()
+			self._buffer.write(data)
+			data = self._buffer.read(n)
 		return data
 
 
-	def get_read_call_count(self: 'MockStreamReader') -> int:
+	def inject(self, data: bytes) -> None:
 		"""
-		read() 메서드 호출 횟수를 반환합니다.
+		외부에서 데이터를 주입하는 함수
 
-		Returns:
-			int: read() 메서드 호출 횟수.
+		Args:
+			data (bytes): 주입할 데이터
 		"""
-		return self._read_call_count
+		self._queue.put_nowait(data)
+
+
+	def inject_with_flush(self, data: bytes) -> None:
+		"""
+		외부에서 데이터를 주입하는 함수. 기존 읽은 데이터는 모두 제거함
+
+		Args:
+			data (bytes): 주입할 데이터
+		"""
+		remaining = self._buffer.read()
+		self._buffer = BytesIO(data + remaining)
 
 
 
-class MockStreamWriter(AsyncMock):
+class MockStreamWriter:
 	"""
-	asyncio.StreamWriter의 write() 메서드를 모방하는 클래스.
-	unittest.mock.AsyncMock을 상속받아 비동기 메서드를 쉽게 모킹합니다.
+	asyncio.StreamWriter의 write() 메서드를 모의 클래스.
 	"""
 	def __init__(self: 'MockStreamWriter') -> None:
 		"""MockStreamWriter 객체를 초기화합니다."""
 		super().__init__()
 		# write와 close 메서드가 호출된 기록을 남기도록 설정
-		self.write = AsyncMock()
-		self.close = AsyncMock()
+		self.write = MagicMock() # 동기
+		self.close = AsyncMock() # 비동기
+
 
 # Mock 객체 인스턴스를 저장할 전역 변수
 mock_reader_instance: MockStreamReader
@@ -112,9 +111,7 @@ async def mock_open_serial_connection(
 
 	# 테스트를 위한 초기 데이터를 BytesIO에 저장
 	initial_data: bytes = b'first data packet\n'
-	reader_buffer = BytesIO(initial_data)
-
-	mock_reader_instance = MockStreamReader(buffer=reader_buffer)
+	mock_reader_instance = MockStreamReader(initial_data=initial_data)
 	mock_writer_instance = MockStreamWriter()
 
 	print(f"모의 연결 생성: {url} @ {baudrate}")
@@ -182,8 +179,10 @@ async def test_main_serail_echo_logic(
 	assert (mock_writer_instance is not None)
 
 	# 2-1. 데이터 읽기 및 표준 출력 검증
-	# reader.read()는 3번 호출되어야 합니다. (최초 데이터가 있는 BytesIO를 전달하였음)
-	assert (mock_reader_instance.get_read_call_count() == 3)
+	mock_reader_instance.read.assert_awaited() # 최소 1회 await 되었나?
+	# reader.read()는 2번 호출되어야 합니다. (최초 데이터가 있는 BytesIO를 전달하였음)
+	assert mock_reader_instance.read.call_count == 2 # 2회 호출되었는가?
+	mock_reader_instance.read.assert_awaited_with(1024) # 마지막 호출 값 확인
 
 	# 캡처된 표준 출력(print) 내용 검증
 	out, err = capfd.readouterr()
@@ -197,7 +196,7 @@ async def test_main_serail_echo_logic(
 	expected_call = (b'hello\n',)
 
 	# writer.write가 정확히 1번 호출되었는지 확인
-	mock_writer_instance.write.assert_called_once_with(expected_call[0])
+	mock_writer_instance.write.assert_called_with(expected_call[0])
 
 	# 호출된 인수가 정확한지 확인 (write()는 튜플 형태의 인수를 받습니다)
 	assert (mock_writer_instance.write.call_args_list[0].args == expected_call)
