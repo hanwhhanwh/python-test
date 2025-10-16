@@ -5,7 +5,7 @@
 
 # Original Packages
 from asyncio import get_running_loop, Protocol, run, \
-					StreamReader, StreamWriter, wait_for
+					CancelledError, StreamReader, StreamWriter, wait_for
 from typing import Final
 
 
@@ -29,12 +29,13 @@ async def main_serial():
 								url=SERIAL_PORT, baudrate=SERIAL_BAUDRATE)
 	while (True):
 		try:
-			data: bytes = await wait_for(reader.read(1024), timeout=1)
+			writer.write(b'hello\n')
+			data: bytes = await reader.read(1024)
 			if (data is None):
 				break
 			print(data.decode())
-		except TimeoutError:
-			writer.write(b'hello\n')
+		except CancelledError:
+			break
 
 
 if (__name__ == "__main__"):
