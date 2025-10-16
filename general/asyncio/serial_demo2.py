@@ -20,7 +20,7 @@ SERIAL_BAUDRATE: Final[str]		= 115200
 
 
 
-async def main_serail():
+async def main_serial():
 	loop = get_running_loop()
 
 	reader: StreamReader = None
@@ -38,4 +38,4 @@ async def main_serail():
 
 
 if (__name__ == "__main__"):
-	run(main_serail())
+	run(main_serial())
