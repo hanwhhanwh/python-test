@@ -531,7 +531,7 @@ class ReservationMonitor:
 
 			self.monitor_target(results, target, current_month)
 
-			if (self.is_monitor_next_month):
+			if ( (self.is_monitor_next_month) and (datetime.now().day >= 14) ):
 				self.monitor_target(results, target, next_month)
 
 		if ( (self.reservation_day.keys() != []) and (results != {}) ):
