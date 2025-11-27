@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
-# 자막 변환 프로그램 (smi -> srt)
+# 자막 변환 프로그램 (smi -> srt) ; v1.1
 # made : hbesthee@naver.com
 # date : 2025-11-24
 
 # Original Packages
 from pathlib import Path
+from shutil import move as file_move
+from struct import unpack_from
 from typing import Dict, Final, List, Optional
 
 import argparse
@@ -141,7 +143,7 @@ class SubtitleConverter:
 		self.gap_threshold_ms = gap_threshold_ms
 
 
-	def convert_file(self, file_path: str, output_folder: str) -> None:
+	def convert_file(self, file_path: str, output_folder: str) -> bool:
 		"""
 		자막 파일 변환 메인 함수
 
@@ -151,26 +153,31 @@ class SubtitleConverter:
 		"""
 		self.logger.info(f"처리 시작: {file_path}")
 
-		try:
-			self.convert_to_utf8(file_path)
+		file_name = Path(file_path).stem # 확장자를 제외한 파일 이름
+		
+		# 출력 파일명 추출
+		output_filename = SubtitleConverter.extract_output_filename(file_name)
+		
+		if (output_filename == None):
+			self.logger.warning(f"파일명 패턴(<문자6개 이하>-<숫자5개 이하>) 불일치로 파일명 변환은 건너뜀: {file_name}")
+			output_filename = file_name # 원래 파일명으로 변환 저장
 
-			with open(file_path, 'r', encoding='utf-8') as f:
-				content = f.read()
+		try:
+
+			with open(file_path, 'rb') as f:
+				raw_content = f.read()
+				content = self.convert_to_utf8(raw_content)
 
 			file_ext = Path(file_path).suffix.lower()
-			file_name = Path(file_path).stem
-
 			if (file_ext == '.smi'):
 				self.logger.info("SMI → SRT 변환")
-				subtitles = self.parse_smi(content)
-				output_name = f"{file_name}.srt"
+				subtitles = SubtitleConverter.parse_smi(content)
 			elif (file_ext == '.srt'):
 				self.logger.info("SRT 형식 처리")
-				subtitles = self.parse_srt(content)
-				output_name = f"{file_name}.srt"
+				subtitles = SubtitleConverter.parse_srt(content)
 			else:
 				self.logger.warning(f"지원하지 않는 형식: {file_ext}")
-				return
+				return False
 
 			subtitles = self.insert_blank_subtitles(subtitles)
 
@@ -178,76 +185,88 @@ class SubtitleConverter:
 
 			Path(output_folder).mkdir(parents=True, exist_ok=True)
 
-			output_path = os.path.join(output_folder, output_name)
+			output_path = os.path.join(output_folder, f"{output_filename}.srt")
 
 			with open(output_path, 'w', encoding='utf-8', newline='\n') as f:
 				f.write(srt_content)
 
 			self.logger.info(f"처리 완료: {output_path}")
-			self.logger.info(f"총 자막 수: {len(subtitles)}")
+			self.logger.info(f"총 자막 줄 수: {len(subtitles)}")
+			return True
 
 		except Exception as e:
 			self.logger.error(f"처리 중 오류 발생: {e}", exc_info=True)
+			return False
 
 
-	def convert_to_utf8(self, file_path: str) -> bool:
+	def convert_to_utf8(self, raw_content: bytes) -> str:
 		"""
 		UTF-8로 인코딩 변환
 
 		Args:
-			file_path: 파일 경로
+			raw_content (bytes): 파일로부터 읽어들인 원시 binary 내용
 
 		Returns:
-			bool: 변환 여부
+			str: utf-8로 변환된 파일 내용
 		"""
-		encoding = self.detect_encoding(file_path)
+		content = None
+		is_utf8 = False
+		try:
+			try:
+				# 1단계: UTF-8로 디코딩 시도
+				content = raw_content.decode('utf-8')
+				is_utf8 = True
+			except UnicodeDecodeError:
+				try:
+					# UTF-16 LE BOM 형식인가?
+					zero_char_count = 0
+					for char in raw_content:
+						zero_char_count += 0 if (char != 0) else 1
+						if (zero_char_count > 100):
+							content = raw_content.decode('utf-16')
+							return content
 
-		if (encoding and encoding.lower() != 'utf-8'):
-			self.logger.info(f"인코딩 변환: {encoding} → UTF-8")
-			with open(file_path, 'r', encoding=encoding, errors='ignore') as f:
-				content = f.read()
+					content = raw_content.decode('euc-kr') # UTF-8로 안 풀리면 euc-kr로 가정
+					is_utf8 = False
+				except Exception as e:
+					self.logger.warning(f'"ecu-kr" decoding fail!', exc_info=True)
+					return None
 
-			with open(file_path, 'w', encoding='utf-8') as f:
-				f.write(content)
-			return True
-		return False
+			# 2단계: 전부 ASCII면 애매하지만, 그냥 UTF-8로 두는 편이 일반적
+			if all(b < 0x80 for b in raw_content):
+				return content
+
+			# 3단계: UTF-8로 풀렸더라도 한글이 거의 없고,
+			#        0x80 이상 바이트 패턴이 "수상한" 경우를 euc-kr로 의심할 수 있다.
+			#   예: 연속된 2바이트가 euc-kr 유효 범위(0xA1–0xFE, 0xA1–0xFE)에 많이 등장하면 euc-kr로 보는 식의 휴리스틱
+			#   (아래는 매우 단순한 예)
+			if (is_utf8):
+				ko_chars = sum(0xAC00 <= ord(ch) <= 0xD7A3 for ch in content)
+				if (ko_chars == 0):
+					content = raw_content.decode('euc-kr') # Unicode 한글이 하나도 없다면? ecu-kr로 디코딩
+
+			return content
+		except ImportError:
+			return None
 
 
 	@staticmethod
-	def detect_encoding(file_path: str) -> Optional[str]:
+	def extract_output_filename(original_filename: str) -> Optional[str]:
 		"""
-		파일 인코딩 감지
-
+		파일명에서 출력 파일명 추출
+		
 		Args:
-			file_path: 파일 경로
-
+			original_filename: 원본 파일명
+			
 		Returns:
-			Optional[str]: 감지된 인코딩
+			Optional[str]: 추출된 파일명 (실패 시 None)
 		"""
-		try:
-			with open(file_path, 'rb') as f:
-				data = f.read()
-				# 1단계: UTF-8로 디코딩 시도
-				try:
-					text = data.decode('utf-8')
-				except UnicodeDecodeError:
-					return 'euc-kr'   # UTF-8로 안 풀리면 euc-kr로 가정
+		pattern = re.compile(r'^[A-Za-z]{1,6}-\d{1,5}')
+		match = pattern.search(original_filename)
 
-				# 2단계: 전부 ASCII면 애매하지만, 그냥 UTF-8로 두는 편이 일반적
-				if all(b < 0x80 for b in data):
-					return 'utf-8'
-
-				# 3단계: UTF-8로 풀렸더라도 한글이 거의 없고,
-				#        0x80 이상 바이트 패턴이 "수상한" 경우를 euc-kr로 의심할 수 있다.
-				#   예: 연속된 2바이트가 euc-kr 유효 범위(0xA1–0xFE, 0xA1–0xFE)에 많이 등장하면 euc-kr로 보는 식의 휴리스틱
-				#   (아래는 매우 단순한 예)
-				ko_chars = sum(0xAC00 <= ord(ch) <= 0xD7A3 for ch in text)
-				if ko_chars >= 1:
-					return 'utf-8'
-				else:
-					return 'euc-kr'
-		except ImportError:
-			return 'utf-8'
+		if (match):
+			return f"{match.group()}"
+		return None
 
 
 	@staticmethod
@@ -281,8 +300,8 @@ class SubtitleConverter:
 		srt_content = []
 
 		for i, sub in enumerate(subtitles, 1):
-			start_time = self.format_srt_time(sub['start'])
-			end_time = self.format_srt_time(sub['end'])
+			start_time = SubtitleConverter.format_srt_time(sub['start'])
+			end_time = SubtitleConverter.format_srt_time(sub['end'])
 
 			srt_content.append(f"{i}")
 			srt_content.append(f"{start_time} --> {end_time}")
@@ -318,14 +337,13 @@ class SubtitleConverter:
 						'end': blank_end,
 						'text': ''
 					})
-					self.logger.info(
-						f"빈 자막 삽입: {gap/1000:.1f}초 간격 발견"
-					)
+					self.logger.debug(f"빈 자막 삽입: {gap/1000:.1f}초 간격 발견")
 
 		return result
 
 
-	def parse_smi(self, content: str) -> List[Dict]:
+	@staticmethod
+	def parse_smi(content: str) -> List[Dict]:
 		"""
 		SMI 파일 파싱
 
@@ -363,7 +381,8 @@ class SubtitleConverter:
 		return subtitles
 
 
-	def parse_srt(self, content: str) -> List[Dict]:
+	@staticmethod
+	def parse_srt(content: str) -> List[Dict]:
 		"""
 		SRT 파일 파싱
 
@@ -382,7 +401,7 @@ class SubtitleConverter:
 				continue
 
 			time_match = re.match(
-				r'(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})',
+				r'(\d{2}):(\d{2}):(\d{2})[,\.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,\.](\d{3})',
 				lines[1]
 			)
 
@@ -445,17 +464,25 @@ class SubtitleBatchProcessor:
 
 		success_count = 0
 		fail_count = 0
+		skip_count = 0
+
+		converted_folder = f"{input_folder}/converted"
+		Path(converted_folder).mkdir(parents=True, exist_ok=True)
 
 		for file_path in subtitle_files:
 			try:
-				self.converter.convert_file(str(file_path), output_folder)
-				success_count += 1
+				result = self.converter.convert_file(str(file_path), output_folder)
+				if (result):
+					success_count += 1
+					file_move(file_path, f"{converted_folder}/{Path(file_path).name}")
+				else:
+					skip_count += 1
 			except Exception as e:
 				self.logger.error(f"파일 처리 실패: {file_path} - {e}")
 				fail_count += 1
 
 		self.logger.info("=" * 50)
-		self.logger.info(f"처리 완료: 성공 {success_count}개, 실패 {fail_count}개")
+		self.logger.info(f"처리 완료: 성공 {success_count}개, 건너뜀 {skip_count}개, 실패 {fail_count}개")
 		self.logger.info("=" * 50)
 
 
