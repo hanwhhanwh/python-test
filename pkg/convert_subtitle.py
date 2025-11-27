@@ -142,7 +142,7 @@ class SubtitleConverter:
 		self.gap_threshold_ms = gap_threshold_ms
 
 
-	def convert_file(self, file_path: str, output_folder: str) -> None:
+	def convert_file(self, file_path: str, output_folder: str) -> bool:
 		"""
 		자막 파일 변환 메인 함수
 
@@ -176,7 +176,7 @@ class SubtitleConverter:
 				subtitles = SubtitleConverter.parse_srt(content)
 			else:
 				self.logger.warning(f"지원하지 않는 형식: {file_ext}")
-				return
+				return False
 
 			subtitles = self.insert_blank_subtitles(subtitles)
 
@@ -191,9 +191,11 @@ class SubtitleConverter:
 
 			self.logger.info(f"처리 완료: {output_path}")
 			self.logger.info(f"총 자막 줄 수: {len(subtitles)}")
+			return True
 
 		except Exception as e:
 			self.logger.error(f"처리 중 오류 발생: {e}", exc_info=True)
+			return False
 
 
 	def convert_to_utf8(self, raw_content: bytes) -> str:
