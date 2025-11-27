@@ -398,7 +398,7 @@ class SubtitleConverter:
 				continue
 
 			time_match = re.match(
-				r'(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})',
+				r'(\d{2}):(\d{2}):(\d{2})[,\.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,\.](\d{3})',
 				lines[1]
 			)
 
