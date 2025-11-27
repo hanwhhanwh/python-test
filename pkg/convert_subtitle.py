@@ -154,11 +154,11 @@ class SubtitleConverter:
 		file_name = Path(file_path).name
 		
 		# 출력 파일명 추출
-		output_filename = self.extract_output_filename(file_name)
+		output_filename = SubtitleConverter.extract_output_filename(file_name)
 		
-		if (not output_filename):
-			self.logger.warning(f"파일명 패턴(<문자6개 이하>-<숫자5개 이하>) 불일치로 변환 건너뜀: {file_name}")
-			return False
+		if (output_filename == None):
+			self.logger.warning(f"파일명 패턴(<문자6개 이하>-<숫자5개 이하>) 불일치로 파일명 변환은 건너뜀: {file_name}")
+			output_filename = file_name # 원래 파일명으로 변환 저장
 
 		try:
 
@@ -169,10 +169,10 @@ class SubtitleConverter:
 			file_ext = Path(file_path).suffix.lower()
 			if (file_ext == '.smi'):
 				self.logger.info("SMI → SRT 변환")
-				subtitles = self.parse_smi(content)
+				subtitles = SubtitleConverter.parse_smi(content)
 			elif (file_ext == '.srt'):
 				self.logger.info("SRT 형식 처리")
-				subtitles = self.parse_srt(content)
+				subtitles = SubtitleConverter.parse_srt(content)
 			else:
 				self.logger.warning(f"지원하지 않는 형식: {file_ext}")
 				return
@@ -189,7 +189,7 @@ class SubtitleConverter:
 				f.write(srt_content)
 
 			self.logger.info(f"처리 완료: {output_path}")
-			self.logger.info(f"총 자막 수: {len(subtitles)}")
+			self.logger.info(f"총 자막 줄 수: {len(subtitles)}")
 
 		except Exception as e:
 			self.logger.error(f"처리 중 오류 발생: {e}", exc_info=True)
@@ -239,6 +239,25 @@ class SubtitleConverter:
 
 
 	@staticmethod
+	def extract_output_filename(original_filename: str) -> Optional[str]:
+		"""
+		파일명에서 출력 파일명 추출
+		
+		Args:
+			original_filename: 원본 파일명
+			
+		Returns:
+			Optional[str]: 추출된 파일명 (실패 시 None)
+		"""
+		pattern = re.compile(r'^[A-Za-z]{1,6}-\d{1,5}')
+		match = pattern.search(original_filename)
+
+		if (match):
+			return f"{match.group()}.srt"
+		return None
+
+
+	@staticmethod
 	def format_srt_time(ms: int) -> str:
 		"""
 		밀리초를 SRT 시간 형식으로 변환
@@ -269,8 +288,8 @@ class SubtitleConverter:
 		srt_content = []
 
 		for i, sub in enumerate(subtitles, 1):
-			start_time = self.format_srt_time(sub['start'])
-			end_time = self.format_srt_time(sub['end'])
+			start_time = SubtitleConverter.format_srt_time(sub['start'])
+			end_time = SubtitleConverter.format_srt_time(sub['end'])
 
 			srt_content.append(f"{i}")
 			srt_content.append(f"{start_time} --> {end_time}")
@@ -306,14 +325,13 @@ class SubtitleConverter:
 						'end': blank_end,
 						'text': ''
 					})
-					self.logger.info(
-						f"빈 자막 삽입: {gap/1000:.1f}초 간격 발견"
-					)
+					self.logger.debug(f"빈 자막 삽입: {gap/1000:.1f}초 간격 발견")
 
 		return result
 
 
-	def parse_smi(self, content: str) -> List[Dict]:
+	@staticmethod
+	def parse_smi(content: str) -> List[Dict]:
 		"""
 		SMI 파일 파싱
 
@@ -351,7 +369,8 @@ class SubtitleConverter:
 		return subtitles
 
 
-	def parse_srt(self, content: str) -> List[Dict]:
+	@staticmethod
+	def parse_srt(content: str) -> List[Dict]:
 		"""
 		SRT 파일 파싱
 
