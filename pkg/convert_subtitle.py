@@ -262,7 +262,7 @@ class SubtitleConverter:
 		match = pattern.search(original_filename)
 
 		if (match):
-			return f"{match.group()}.srt"
+			return f"{match.group()}"
 		return None
 
 
