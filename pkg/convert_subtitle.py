@@ -5,6 +5,7 @@
 
 # Original Packages
 from pathlib import Path
+from shutil import move as file_move
 from struct import unpack_from
 from typing import Dict, Final, List, Optional
 
@@ -465,11 +466,15 @@ class SubtitleBatchProcessor:
 		fail_count = 0
 		skip_count = 0
 
+		converted_folder = f"{input_folder}/converted"
+		Path(converted_folder).mkdir(parents=True, exist_ok=True)
+
 		for file_path in subtitle_files:
 			try:
 				result = self.converter.convert_file(str(file_path), output_folder)
 				if (result):
 					success_count += 1
+					file_move(file_path, f"{converted_folder}/{Path(file_path).name}")
 				else:
 					skip_count += 1
 			except Exception as e:
