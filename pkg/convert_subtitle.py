@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# 자막 변환 프로그램 (smi -> srt)
+# 자막 변환 프로그램 (smi -> srt) ; v1.1
 # made : hbesthee@naver.com
 # date : 2025-11-24
 
@@ -151,23 +151,28 @@ class SubtitleConverter:
 		"""
 		self.logger.info(f"처리 시작: {file_path}")
 
-		try:
-			self.convert_to_utf8(file_path)
+		file_name = Path(file_path).name
+		
+		# 출력 파일명 추출
+		output_filename = self.extract_output_filename(file_name)
+		
+		if (not output_filename):
+			self.logger.warning(f"파일명 패턴(<문자6개 이하>-<숫자5개 이하>) 불일치로 변환 건너뜀: {file_name}")
+			return False
 
-			with open(file_path, 'r', encoding='utf-8') as f:
-				content = f.read()
+		try:
+
+			with open(file_path, 'rb') as f:
+				raw_content = f.read()
+				content = self.convert_to_utf8(raw_content)
 
 			file_ext = Path(file_path).suffix.lower()
-			file_name = Path(file_path).stem
-
 			if (file_ext == '.smi'):
 				self.logger.info("SMI → SRT 변환")
 				subtitles = self.parse_smi(content)
-				output_name = f"{file_name}.srt"
 			elif (file_ext == '.srt'):
 				self.logger.info("SRT 형식 처리")
 				subtitles = self.parse_srt(content)
-				output_name = f"{file_name}.srt"
 			else:
 				self.logger.warning(f"지원하지 않는 형식: {file_ext}")
 				return
@@ -178,7 +183,7 @@ class SubtitleConverter:
 
 			Path(output_folder).mkdir(parents=True, exist_ok=True)
 
-			output_path = os.path.join(output_folder, output_name)
+			output_path = os.path.join(output_folder, f"{output_filename}.srt")
 
 			with open(output_path, 'w', encoding='utf-8', newline='\n') as f:
 				f.write(srt_content)
@@ -190,64 +195,47 @@ class SubtitleConverter:
 			self.logger.error(f"처리 중 오류 발생: {e}", exc_info=True)
 
 
-	def convert_to_utf8(self, file_path: str) -> bool:
+	def convert_to_utf8(self, raw_content: bytes) -> str:
 		"""
 		UTF-8로 인코딩 변환
 
 		Args:
-			file_path: 파일 경로
+			raw_content (bytes): 파일로부터 읽어들인 원시 binary 내용
 
 		Returns:
-			bool: 변환 여부
+			str: utf-8로 변환된 파일 내용
 		"""
-		encoding = self.detect_encoding(file_path)
-
-		if (encoding and encoding.lower() != 'utf-8'):
-			self.logger.info(f"인코딩 변환: {encoding} → UTF-8")
-			with open(file_path, 'r', encoding=encoding, errors='ignore') as f:
-				content = f.read()
-
-			with open(file_path, 'w', encoding='utf-8') as f:
-				f.write(content)
-			return True
-		return False
-
-
-	@staticmethod
-	def detect_encoding(file_path: str) -> Optional[str]:
-		"""
-		파일 인코딩 감지
-
-		Args:
-			file_path: 파일 경로
-
-		Returns:
-			Optional[str]: 감지된 인코딩
-		"""
+		content = None
+		is_utf8 = False
 		try:
-			with open(file_path, 'rb') as f:
-				data = f.read()
-				# 1단계: UTF-8로 디코딩 시도
+			# 1단계: UTF-8로 디코딩 시도
+			try:
+				content = raw_content.decode('utf-8')
+				is_utf8 = True
+			except UnicodeDecodeError:
 				try:
-					text = data.decode('utf-8')
-				except UnicodeDecodeError:
-					return 'euc-kr'   # UTF-8로 안 풀리면 euc-kr로 가정
+					content = raw_content.decode('euc-kr') # UTF-8로 안 풀리면 euc-kr로 가정
+					is_utf8 = False
+				except Exception as e:
+					self.logger.warning(f'"ecu-kr" decoding fail!', exc_info=True)
+					return None
 
-				# 2단계: 전부 ASCII면 애매하지만, 그냥 UTF-8로 두는 편이 일반적
-				if all(b < 0x80 for b in data):
-					return 'utf-8'
+			# 2단계: 전부 ASCII면 애매하지만, 그냥 UTF-8로 두는 편이 일반적
+			if all(b < 0x80 for b in raw_content):
+				return content
 
-				# 3단계: UTF-8로 풀렸더라도 한글이 거의 없고,
-				#        0x80 이상 바이트 패턴이 "수상한" 경우를 euc-kr로 의심할 수 있다.
-				#   예: 연속된 2바이트가 euc-kr 유효 범위(0xA1–0xFE, 0xA1–0xFE)에 많이 등장하면 euc-kr로 보는 식의 휴리스틱
-				#   (아래는 매우 단순한 예)
-				ko_chars = sum(0xAC00 <= ord(ch) <= 0xD7A3 for ch in text)
-				if ko_chars >= 1:
-					return 'utf-8'
-				else:
-					return 'euc-kr'
+			# 3단계: UTF-8로 풀렸더라도 한글이 거의 없고,
+			#        0x80 이상 바이트 패턴이 "수상한" 경우를 euc-kr로 의심할 수 있다.
+			#   예: 연속된 2바이트가 euc-kr 유효 범위(0xA1–0xFE, 0xA1–0xFE)에 많이 등장하면 euc-kr로 보는 식의 휴리스틱
+			#   (아래는 매우 단순한 예)
+			if (is_utf8):
+				ko_chars = sum(0xAC00 <= ord(ch) <= 0xD7A3 for ch in content)
+				if (ko_chars == 0):
+					content = raw_content.decode('euc-kr') # Unicode 한글이 하나도 없다면? ecu-kr로 디코딩
+
+			return content
 		except ImportError:
-			return 'utf-8'
+			return None
 
 
 	@staticmethod
@@ -445,17 +433,21 @@ class SubtitleBatchProcessor:
 
 		success_count = 0
 		fail_count = 0
+		skip_count = 0
 
 		for file_path in subtitle_files:
 			try:
-				self.converter.convert_file(str(file_path), output_folder)
-				success_count += 1
+				result = self.converter.convert_file(str(file_path), output_folder)
+				if (result):
+					success_count += 1
+				else:
+					skip_count += 1
 			except Exception as e:
 				self.logger.error(f"파일 처리 실패: {file_path} - {e}")
 				fail_count += 1
 
 		self.logger.info("=" * 50)
-		self.logger.info(f"처리 완료: 성공 {success_count}개, 실패 {fail_count}개")
+		self.logger.info(f"처리 완료: 성공 {success_count}개, 건너뜀 {skip_count}개, 실패 {fail_count}개")
 		self.logger.info("=" * 50)
 
 
