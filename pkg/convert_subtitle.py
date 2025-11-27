@@ -5,6 +5,7 @@
 
 # Original Packages
 from pathlib import Path
+from struct import unpack_from
 from typing import Dict, Final, List, Optional
 
 import argparse
@@ -151,7 +152,7 @@ class SubtitleConverter:
 		"""
 		self.logger.info(f"처리 시작: {file_path}")
 
-		file_name = Path(file_path).name
+		file_name = Path(file_path).stem # 확장자를 제외한 파일 이름
 		
 		# 출력 파일명 추출
 		output_filename = SubtitleConverter.extract_output_filename(file_name)
@@ -208,12 +209,20 @@ class SubtitleConverter:
 		content = None
 		is_utf8 = False
 		try:
-			# 1단계: UTF-8로 디코딩 시도
 			try:
+				# 1단계: UTF-8로 디코딩 시도
 				content = raw_content.decode('utf-8')
 				is_utf8 = True
 			except UnicodeDecodeError:
 				try:
+					# UTF-16 LE BOM 형식인가?
+					zero_char_count = 0
+					for char in raw_content:
+						zero_char_count += 0 if (char != 0) else 1
+						if (zero_char_count > 100):
+							content = raw_content.decode('utf-16')
+							return content
+
 					content = raw_content.decode('euc-kr') # UTF-8로 안 풀리면 euc-kr로 가정
 					is_utf8 = False
 				except Exception as e:
