@@ -14,19 +14,19 @@ class MeterCmdEnum(IntEnum):
 	프로토콜 Command (Cmd) 정의 클래스
 	"""
 	# Meter -> CPU (Push) 명령
-	METER_DATA_TRANSMISSION: Final[int] = 0x80  # 계측 데이터 전송 [cite: 4]
-	LEAKAGE_CURRENT_OCCURRENCE: Final[int] = 0xA0  # 누설전류 발생 [cite: 4]
-	OVERCURRENT_OCCURRENCE: Final[int] = 0xB0  # 과전류 발생 [cite: 4]
-	POWER_FAILURE_OCCURRENCE: Final[int] = 0xC0  # 정전 발생 [cite: 4]
+	METER_DATA_TRANSMISSION: Final[int] = 0x80  # 계측 데이터 전송
+	LEAKAGE_CURRENT_OCCURRENCE: Final[int] = 0xA0  # 누설전류 발생
+	OVERCURRENT_OCCURRENCE: Final[int] = 0xB0  # 과전류 발생
+	POWER_FAILURE_OCCURRENCE: Final[int] = 0xC0  # 정전 발생
 
 	# 설정/조회 명령
-	FIRMWARE_VERSION_INFO: Final[int] = 0xC3  # 펌웨어 버전 정보 [cite: 4]
-	TIME_READ_WRITE: Final[int] = 0xC5  # 시간 쓰기/읽기 [cite: 4]
-	PARAMETER_SET_INQUIRY: Final[int] = 0xC8  # 파라미터 설정/조회 [cite: 4]
+	FIRMWARE_VERSION_INFO: Final[int] = 0xC3  # 펌웨어 버전 정보
+	TIME_READ_WRITE: Final[int] = 0xC5  # 시간 쓰기/읽기
+	PARAMETER_SET_INQUIRY: Final[int] = 0xC8  # 파라미터 설정/조회
 
 	# 펌웨어 업데이트 명령
-	FW_IMAGE_TRANSFER: Final[int] = 0xE0  # Fw Image 전송 (Transfer & Activate 포함) [cite: 4, 9, 12]
-	FW_IMAGE_TRANSFER_RESPONSE: Final[int] = 0xF0  # Fw Image 전송 응답 [cite: 4, 14]
+	FW_IMAGE_TRANSFER: Final[int] = 0xE0  # Fw Image 전송 (Transfer & Activate 포함)
+	FW_IMAGE_TRANSFER_RESPONSE: Final[int] = 0xF0  # Fw Image 전송 응답
 
 
 	@staticmethod
