@@ -266,7 +266,7 @@ class SubtitleConverter:
 		match = pattern.search(original_filename)
 
 		if (match):
-			return f"{match.group()}"
+			return f"{match.group().upper()}"
 		return None
 
 
