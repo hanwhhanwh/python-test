@@ -35,7 +35,7 @@ from lib.json_util import load_json_conf
 
 class ConfigKey:
 	"""설정 파일 키 정의"""
-	LOGGING_LEVEL: Final[str] = "logging_level"
+	LOG_LEVEL: Final[str] = "log_level"
 	BLANK_TIME_SECONDS: Final[str] = "blank_time_seconds"
 	OUTPUT_FOLDER: Final[str] = "output_folder"
 	BACKUP_FOLDERS: Final[str] = "backup_folders"
@@ -59,13 +59,14 @@ class ConfigManager:
 	"""
 	설정 관리 클래스 (DataClass)
 	"""
-	logging_level: int = 20
+	log_level: int = 20
 	blank_time_seconds: int = 300
 	output_folder: str = "./subtitles/output"
 	backup_folders: str = ""
 
 	CONFIG_PATH: str = field(default="conf/subtitle_converter.json", init=False)
-	LOG_PATH: str = field(default="logs/subtitle_converter.log", init=False)
+	LOG_PATH: str = field(default="./logs", init=False)
+	LOG_NAME: str = field(default="subtitle_converter", init=False)
 
 
 	@classmethod
@@ -108,7 +109,7 @@ class ConfigManager:
 		Path(config_path).parent.mkdir(parents=True, exist_ok=True)
 
 		default_config = {
-			"logging_level": 20,
+			"log_level": 20,
 			"blank_time_seconds": 300,
 			"output_folder": "./subtitles/output",
 			"backup_folders": ""
@@ -176,8 +177,9 @@ class SubtitleConverter:
 		self._backup_folders = self.config.parse_backup_folders()
 
 		self.logger = createLogger(
-			self.config.LOG_PATH,
-			self.config.logging_level
+			log_path=self.config.LOG_PATH,
+			logger_name=self.config.LOG_NAME,
+			log_level=self.config.log_level
 		)
 		self.gap_threshold_ms = self.config.blank_time_seconds * 1000
 
@@ -190,7 +192,7 @@ class SubtitleConverter:
 		self.logger.info(f"출력 폴더: {os.path.abspath(self.config.output_folder)}")
 		self.logger.info(f"빈 자막 간격 임계값: {self.config.blank_time_seconds}초")
 		self.logger.info(f"백업 폴더: {self._backup_folders if self._backup_folders else '없음'}")
-		self.logger.info(f"로깅 레벨: {self.config.logging_level}")
+		self.logger.info(f"로깅 레벨: {self.config.log_level}")
 		self.logger.info("지원 형식: SMI, SRT")
 		self.logger.info("=" * 50)
 
@@ -206,6 +208,9 @@ class SubtitleConverter:
 			self.logger.warning(f"처리할 자막 파일이 없습니다: {args.folder}")
 			return
 
+		self.converted_path = f"{args.folder}/converted"
+		if (not os.path.exists(self.converted_path)):
+			os.makedirs(self.converted_path)
 		self.logger.info(f"발견된 자막 파일 수: {len(subtitle_files)}")
 
 		success_count = 0
@@ -288,6 +293,10 @@ class SubtitleConverter:
 				f.write(srt_content)
 
 			self._backup_file(output_path, f"{output_filename}.srt")
+			converted_file = str(Path(self.converted_path) / Path(file_path).name)
+			if (os.path.exists(converted_file)):
+				os.remove(converted_file)
+			os.rename(file_path, converted_file)
 
 			self.logger.info(f"처리 완료: {output_path}")
 			self.logger.info(f"총 자막 줄 수: {len(subtitles)}")
@@ -465,7 +474,7 @@ class SubtitleConverter:
 						'end': blank_end,
 						'text': ''
 					})
-					self.logger.info(
+					self.logger.debug(
 						f"빈 자막 삽입: {gap/1000:.1f}초 간격 발견"
 					)
 
@@ -536,7 +545,7 @@ class SubtitleConverter:
 					f"백업 실패: {backup_folder} - {e}",
 					exc_info=True
 				)
-		self.logger.info(f"백업 완료: {backup_path}")
+		self.logger.debug(f"백업 완료: {self._backup_folders}")
 
 
 def parse_arguments() -> argparse.Namespace:
