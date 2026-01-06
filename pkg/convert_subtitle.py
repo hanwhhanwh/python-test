@@ -4,16 +4,15 @@
 # date : 2025-11-24
 
 # Original Packages
+from dataclasses import dataclass, field, fields
 from pathlib import Path
-from shutil import move as file_move
-from struct import unpack_from
-from typing import Dict, Final, List, Optional
+from typing import Final, List, Optional
 
 import argparse
 import json
-import logging
 import os
 import re
+import shutil
 
 
 
@@ -36,9 +35,10 @@ from lib.json_util import load_json_conf
 
 class ConfigKey:
 	"""설정 파일 키 정의"""
-	LOGGING_LEVEL: Final[str] = "logging_level"
+	LOG_LEVEL: Final[str] = "log_level"
 	BLANK_TIME_SECONDS: Final[str] = "blank_time_seconds"
 	OUTPUT_FOLDER: Final[str] = "output_folder"
+	BACKUP_FOLDERS: Final[str] = "backup_folders"
 
 
 
@@ -48,126 +48,227 @@ class ConfigDef:
 	BLANK_TIME_SECONDS: Final[int] = 30  # 단위: 초
 	BLANK_GAP_MS: Final[int] = 300  # 단위: 밀리초
 	OUTPUT_FOLDER: Final[str] = "./subtitles/output"
+	BACKUP_FOLDERS: Final[str] = "./subtitles/backup"
 	CONFIG_PATH: Final[str] = "conf/subtitle_converter.json"
 	LOG_PATH: Final[str] = "logs/subtitle_converter.log"
 
 
 
+@dataclass
 class ConfigManager:
 	"""
-	설정 관리 클래스
+	설정 관리 클래스 (DataClass)
 	"""
-	def __init__(self, config_path: str=ConfigDef.CONFIG_PATH):
+	log_level: int = 20
+	blank_time_seconds: int = 300
+	output_folder: str = "./subtitles/output"
+	backup_folders: str = ""
+
+	CONFIG_PATH: str = field(default="conf/subtitle_converter.json", init=False)
+	LOG_PATH: str = field(default="./logs", init=False)
+	LOG_NAME: str = field(default="subtitle_converter", init=False)
+
+
+	@classmethod
+	def load_from_file(cls, config_path: str = "conf/subtitle_converter.json"):
 		"""
-		설정 관리자 초기화
+		설정 파일에서 로드
+
+		Args:
+			config_path: 설정 파일 경로
+
+		Returns:
+			ConfigManager: 설정 관리자 인스턴스
+		"""
+		if (not os.path.exists(config_path)):
+			cls._create_default_config(config_path)
+
+		try:
+			with open(config_path, 'r', encoding='utf-8') as f:
+				config_data = json.load(f)
+
+			instance = cls(**config_data)
+			instance.CONFIG_PATH = config_path
+			return instance
+		except Exception as e:
+			print(f"설정 파일 로드 실패: {e}")
+			print("기본 설정을 사용합니다.")
+			instance = cls()
+			instance.CONFIG_PATH = config_path
+			return instance
+
+
+	@staticmethod
+	def _create_default_config(config_path: str) -> None:
+		"""
+		기본 설정 파일 생성
 
 		Args:
 			config_path: 설정 파일 경로
 		"""
-		self.config_path = config_path
-		self.config = self._load_config()
+		Path(config_path).parent.mkdir(parents=True, exist_ok=True)
 
-
-	def _create_default_config(self) -> None:
-		"""기본 설정 파일 생성"""
-		Path(self.config_path).parent.mkdir(parents=True, exist_ok=True)
-
-		config = self._get_default_config()
-
-		with open(self.config_path, 'w', encoding='utf-8') as f:
-			json.dump(config, f, indent=4, ensure_ascii=False)
-
-		print(f"기본 설정 파일 생성: {self.config_path}")
-
-
-	def _get_default_config(self) -> Dict:
-		"""
-		기본 설정 반환
-
-		Returns:
-			Dict: 기본 설정 딕셔너리
-		"""
-		return {
-			ConfigKey.LOGGING_LEVEL: ConfigDef.LOGGING_LEVEL,
-			ConfigKey.BLANK_TIME_SECONDS: ConfigDef.BLANK_TIME_SECONDS,
-			ConfigKey.OUTPUT_FOLDER: ConfigDef.OUTPUT_FOLDER
+		default_config = {
+			"log_level": 20,
+			"blank_time_seconds": 300,
+			"output_folder": "./subtitles/output",
+			"backup_folders": ""
 		}
 
+		with open(config_path, 'w', encoding='utf-8') as f:
+			json.dump(default_config, f, indent=4, ensure_ascii=False)
 
-	def _load_config(self) -> Dict:
+		print(f"기본 설정 파일 생성: {config_path}")
+
+
+	def update_from_args(self, args: argparse.Namespace) -> None:
 		"""
-		설정 파일 로드
-
-		Returns:
-			Dict: 설정 딕셔너리
-		"""
-		if (not os.path.exists(self.config_path)):
-			self._create_default_config()
-
-		try:
-			with open(self.config_path, 'r', encoding='utf-8') as f:
-				config = json.load(f)
-			return config
-		except Exception as e:
-			print(f"설정 파일 로드 실패: {e}")
-			print("기본 설정을 사용합니다.")
-			return self._get_default_config()
-
-
-	def get(self, key: str, default=None):
-		"""
-		설정 값 가져오기
+		명령행 인수로 설정 업데이트
 
 		Args:
-			key: 설정 키
-			default: 기본값
+			args: 파싱된 명령행 인수
+		"""
+		field_names = {f.name for f in fields(self) if f.init}
+
+		for field_name in field_names:
+			arg_value = getattr(args, field_name, None)
+			if (arg_value is not None):
+				setattr(self, field_name, arg_value)
+
+
+	def parse_backup_folders(self) -> List[str]:
+		"""
+		백업 폴더 문자열을 리스트로 변환
 
 		Returns:
-			설정 값
+			List[str]: 백업 폴더 리스트
 		"""
-		return self.config.get(key, default)
+		if (not self.backup_folders):
+			return []
+
+		folders = [f.strip() for f in self.backup_folders.split(',')]
+		return [f for f in folders if f]
 
 
 
 class SubtitleConverter:
-	"""자막 파일 변환 클래스"""
+	"""
+	자막 파일 변환 클래스
+	"""
 
-	def __init__(self, logger: logging.Logger, gap_threshold_ms: int):
+	def __init__(self):
 		"""
 		자막 변환기 초기화
+		"""
+		self.config = None
+		self.logger = None
+		self.gap_threshold_ms = 0
+
+
+	def run(self, args: argparse.Namespace) -> None:
+		"""
+		지정된 폴더의 자막 파일 일괄 변환
 
 		Args:
-			logger: 로거 인스턴스
-			gap_threshold_ms: 빈 자막 삽입 임계값 (밀리초)
+			args: 파싱된 명령행 인수
 		"""
-		self.logger = logger
-		self.gap_threshold_ms = gap_threshold_ms
+		self.config = ConfigManager.load_from_file()
+		self.config.update_from_args(args)
+		self._backup_folders = self.config.parse_backup_folders()
+
+		self.logger = createLogger(
+			log_path=self.config.LOG_PATH,
+			logger_name=self.config.LOG_NAME,
+			log_level=self.config.log_level
+		)
+		self.gap_threshold_ms = self.config.blank_time_seconds * 1000
+
+		self.logger.info("=" * 50)
+		self.logger.info("자막 자동 변환 프로그램 시작")
+		self.logger.info("=" * 50)
+		self.logger.info(f"설정 파일: {self.config.CONFIG_PATH}")
+		self.logger.info(f"로그 파일: {self.config.LOG_PATH}")
+		self.logger.info(f"입력 폴더: {os.path.abspath(args.folder)}")
+		self.logger.info(f"출력 폴더: {os.path.abspath(self.config.output_folder)}")
+		self.logger.info(f"빈 자막 간격 임계값: {self.config.blank_time_seconds}초")
+		self.logger.info(f"백업 폴더: {self._backup_folders if self._backup_folders else '없음'}")
+		self.logger.info(f"로깅 레벨: {self.config.log_level}")
+		self.logger.info("지원 형식: SMI, SRT")
+		self.logger.info("=" * 50)
+
+		if (not os.path.exists(args.folder)):
+			self.logger.error(f"입력 폴더가 존재하지 않습니다: {args.folder}")
+			return
+
+		subtitle_files = []
+		for ext in ['.smi', '.srt']:
+			subtitle_files.extend(Path(args.folder).glob(f"*{ext}"))
+
+		if (not subtitle_files):
+			self.logger.warning(f"처리할 자막 파일이 없습니다: {args.folder}")
+			return
+
+		self.converted_path = f"{args.folder}/converted"
+		if (not os.path.exists(self.converted_path)):
+			os.makedirs(self.converted_path)
+		self.logger.info(f"발견된 자막 파일 수: {len(subtitle_files)}")
+
+		success_count = 0
+		skip_count = 0
+		fail_count = 0
+
+		for file_path in subtitle_files:
+			result = self._convert_file(
+				str(file_path),
+				self.config.output_folder
+			)
+
+			if (result is True):
+				success_count += 1
+			elif (result is False):
+				skip_count += 1
+			else:
+				fail_count += 1
+
+		self.logger.info("=" * 50)
+		self.logger.info(
+			f"처리 완료: 성공 {success_count}개, "
+			f"건너뜀 {skip_count}개, 실패 {fail_count}개"
+		)
+		self.logger.info("=" * 50)
 
 
-	def convert_file(self, file_path: str, output_folder: str) -> bool:
+	def _convert_file(self, file_path: str, output_folder: str) -> Optional[bool]:
 		"""
 		자막 파일 변환 메인 함수
 
 		Args:
 			file_path: 입력 파일 경로
 			output_folder: 출력 폴더 경로
+
+		Returns:
+			Optional[bool]: 변환 성공 여부 (True: 성공, False: 건너뜀, None: 실패)
 		"""
 		self.logger.info(f"처리 시작: {file_path}")
 
-		file_name = Path(file_path).stem # 확장자를 제외한 파일 이름
-		
-		# 출력 파일명 추출
+		file_name = Path(file_path).stem
+
 		output_filename = SubtitleConverter.extract_output_filename(file_name)
-		
-		if (output_filename == None):
-			self.logger.warning(f"파일명 패턴(<문자6개 이하>-<숫자5개 이하>) 불일치로 파일명 변환은 건너뜀: {file_name}")
-			output_filename = file_name # 원래 파일명으로 변환 저장
+
+		if (output_filename is None):
+			self.logger.warning(
+				f"파일명 패턴(<문자6개 이하>-<숫자5개 이하>) 불일치로 파일명 변환은 건너뜀: {file_name}"
+			)
+			output_filename = file_name
 
 		try:
-
 			with open(file_path, 'rb') as f:
 				raw_content = f.read()
 				content = self.convert_to_utf8(raw_content)
+
+			if (content is None):
+				self.logger.error("인코딩 변환 실패")
+				return None
 
 			file_ext = Path(file_path).suffix.lower()
 			if (file_ext == '.smi'):
@@ -182,7 +283,7 @@ class SubtitleConverter:
 
 			subtitles = self.insert_blank_subtitles(subtitles)
 
-			srt_content = self.generate_srt(subtitles)
+			srt_content = SubtitleConverter.generate_srt(subtitles)
 
 			Path(output_folder).mkdir(parents=True, exist_ok=True)
 
@@ -191,13 +292,19 @@ class SubtitleConverter:
 			with open(output_path, 'w', encoding='utf-8', newline='\n') as f:
 				f.write(srt_content)
 
+			self._backup_file(output_path, f"{output_filename}.srt")
+			converted_file = str(Path(self.converted_path) / Path(file_path).name)
+			if (os.path.exists(converted_file)):
+				os.remove(converted_file)
+			os.rename(file_path, converted_file)
+
 			self.logger.info(f"처리 완료: {output_path}")
 			self.logger.info(f"총 자막 줄 수: {len(subtitles)}")
 			return True
 
 		except Exception as e:
 			self.logger.error(f"처리 중 오류 발생: {e}", exc_info=True)
-			return False
+			return None
 
 
 	def convert_to_utf8(self, raw_content: bytes) -> str:
@@ -214,12 +321,10 @@ class SubtitleConverter:
 		is_utf8 = False
 		try:
 			try:
-				# 1단계: UTF-8로 디코딩 시도
 				content = raw_content.decode('utf-8')
 				is_utf8 = True
 			except UnicodeDecodeError:
 				try:
-					# UTF-16 LE BOM 형식인가?
 					zero_char_count = 0
 					for char in raw_content:
 						zero_char_count += 0 if (char != 0) else 1
@@ -227,27 +332,22 @@ class SubtitleConverter:
 							content = raw_content.decode('utf-16')
 							return content
 
-					content = raw_content.decode('euc-kr') # UTF-8로 안 풀리면 euc-kr로 가정
+					content = raw_content.decode('euc-kr')
 					is_utf8 = False
 				except Exception as e:
-					self.logger.warning(f'"ecu-kr" decoding fail!', exc_info=True)
+					self.logger.warning('"euc-kr" decoding fail!', exc_info=True)
 					return None
 
-			# 2단계: 전부 ASCII면 애매하지만, 그냥 UTF-8로 두는 편이 일반적
-			if all(b < 0x80 for b in raw_content):
+			if (all(b < 0x80 for b in raw_content)):
 				return content
 
-			# 3단계: UTF-8로 풀렸더라도 한글이 거의 없고,
-			#        0x80 이상 바이트 패턴이 "수상한" 경우를 euc-kr로 의심할 수 있다.
-			#   예: 연속된 2바이트가 euc-kr 유효 범위(0xA1–0xFE, 0xA1–0xFE)에 많이 등장하면 euc-kr로 보는 식의 휴리스틱
-			#   (아래는 매우 단순한 예)
 			if (is_utf8):
 				ko_chars = sum(0xAC00 <= ord(ch) <= 0xD7A3 for ch in content)
 				if (ko_chars == 0):
-					content = raw_content.decode('euc-kr') # Unicode 한글이 하나도 없다면? ecu-kr로 디코딩
+					content = raw_content.decode('euc-kr')
 
 			return content
-		except ImportError:
+		except Exception:
 			return None
 
 
@@ -255,10 +355,10 @@ class SubtitleConverter:
 	def extract_output_filename(original_filename: str) -> Optional[str]:
 		"""
 		파일명에서 출력 파일명 추출
-		
+
 		Args:
 			original_filename: 원본 파일명
-			
+
 		Returns:
 			Optional[str]: 추출된 파일명 (실패 시 None)
 		"""
@@ -266,85 +366,12 @@ class SubtitleConverter:
 		match = pattern.search(original_filename)
 
 		if (match):
-			return f"{match.group().upper()}"
+			return match.group().upper()
 		return None
 
 
 	@staticmethod
-	def format_srt_time(ms: int) -> str:
-		"""
-		밀리초를 SRT 시간 형식으로 변환
-
-		Args:
-			ms: 밀리초
-
-		Returns:
-			str: SRT 시간 형식 문자열
-		"""
-		hours = ms // 3600000
-		minutes = (ms % 3600000) // 60000
-		seconds = (ms % 60000) // 1000
-		milliseconds = ms % 1000
-		return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
-
-
-	def generate_srt(self, subtitles: List[Dict]) -> str:
-		"""
-		SRT 형식으로 자막파일 생성
-
-		Args:
-			subtitles: 자막 리스트
-
-		Returns:
-			str: SRT 형식 문자열
-		"""
-		srt_content = []
-
-		for i, sub in enumerate(subtitles, 1):
-			start_time = SubtitleConverter.format_srt_time(sub['start'])
-			end_time = SubtitleConverter.format_srt_time(sub['end'])
-
-			srt_content.append(f"{i}")
-			srt_content.append(f"{start_time} --> {end_time}")
-			srt_content.append(sub['text'])
-			srt_content.append("")
-
-		return '\n'.join(srt_content)
-
-
-	def insert_blank_subtitles(self, subtitles: List[Dict]) -> List[Dict]:
-		"""
-		빈 자막 삽입
-
-		Args:
-			subtitles: 자막 리스트
-
-		Returns:
-			List[Dict]: 빈 자막이 삽입된 자막 리스트
-		"""
-		result = []
-
-		for i, sub in enumerate(subtitles):
-			result.append(sub)
-
-			if (i + 1 < len(subtitles)):
-				gap = subtitles[i + 1]['start'] - sub['end']
-
-				if (gap > self.gap_threshold_ms):
-					blank_start = sub['end'] + ConfigDef.BLANK_GAP_MS
-					blank_end = subtitles[i + 1]['start'] - ConfigDef.BLANK_GAP_MS
-					result.append({
-						'start': blank_start,
-						'end': blank_end,
-						'text': ''
-					})
-					self.logger.debug(f"빈 자막 삽입: {gap/1000:.1f}초 간격 발견")
-
-		return result
-
-
-	@staticmethod
-	def parse_smi(content: str) -> List[Dict]:
+	def parse_smi(content: str) -> List[dict]:
 		"""
 		SMI 파일 파싱
 
@@ -383,7 +410,7 @@ class SubtitleConverter:
 
 
 	@staticmethod
-	def parse_srt(content: str) -> List[Dict]:
+	def parse_srt(content: str) -> List[dict]:
 		"""
 		SRT 파일 파싱
 
@@ -421,71 +448,104 @@ class SubtitleConverter:
 		return subtitles
 
 
-
-class SubtitleBatchProcessor:
-	"""자막 일괄 처리 클래스"""
-
-	def __init__(
-		self,
-		converter: SubtitleConverter,
-		logger: logging.Logger
-	):
+	def insert_blank_subtitles(self, subtitles: List[dict]) -> List[dict]:
 		"""
-		일괄 처리기 초기화
+		빈 자막 삽입
 
 		Args:
-			converter: 자막 변환기 인스턴스
-			logger: 로거 인스턴스
+			subtitles: 자막 리스트
+
+		Returns:
+			List[dict]: 빈 자막이 삽입된 자막 리스트
 		"""
-		self.converter = converter
-		self.logger = logger
+		result = []
+
+		for i, sub in enumerate(subtitles):
+			result.append(sub)
+
+			if (i + 1 < len(subtitles)):
+				gap = subtitles[i + 1]['start'] - sub['end']
+
+				if (gap > self.gap_threshold_ms):
+					blank_start = sub['end'] + 1000
+					blank_end = blank_start + 2000
+					result.append({
+						'start': blank_start,
+						'end': blank_end,
+						'text': ''
+					})
+					self.logger.debug(
+						f"빈 자막 삽입: {gap/1000:.1f}초 간격 발견"
+					)
+
+		return result
 
 
-	def process_folder(self, input_folder: str, output_folder: str) -> None:
+	@staticmethod
+	def _format_srt_time(ms: int) -> str:
 		"""
-		폴더 내 모든 자막 파일 처리
+		밀리초를 SRT 시간 형식으로 변환
 
 		Args:
-			input_folder: 입력 폴더 경로
-			output_folder: 출력 폴더 경로
+			ms: 밀리초
+
+		Returns:
+			str: SRT 시간 형식 문자열
 		"""
-		if (not os.path.exists(input_folder)):
-			self.logger.error(f"입력 폴더가 존재하지 않습니다: {input_folder}")
+		hours = ms // 3600000
+		minutes = (ms % 3600000) // 60000
+		seconds = (ms % 60000) // 1000
+		milliseconds = ms % 1000
+		return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
+
+
+	@staticmethod
+	def generate_srt(subtitles: List[dict]) -> str:
+		"""
+		SRT 형식 생성
+
+		Args:
+			subtitles: 자막 리스트
+
+		Returns:
+			str: SRT 형식 문자열
+		"""
+		srt_content = []
+
+		for i, sub in enumerate(subtitles, 1):
+			start_time = SubtitleConverter._format_srt_time(sub['start'])
+			end_time = SubtitleConverter._format_srt_time(sub['end'])
+
+			srt_content.append(f"{i}")
+			srt_content.append(f"{start_time} --> {end_time}")
+			srt_content.append(sub['text'])
+			srt_content.append("")
+
+		return '\n'.join(srt_content)
+
+
+	def _backup_file(self, source_path: str, filename: str) -> None:
+		"""
+		백업 폴더에 파일 복사
+
+		Args:
+			source_path: 원본 파일 경로
+			filename: 파일명
+		"""
+		if (not self._backup_folders):
 			return
 
-		subtitle_files = []
-		for ext in ['.smi', '.srt']:
-			subtitle_files.extend(Path(input_folder).glob(f"*{ext}"))
-
-		if (not subtitle_files):
-			self.logger.warning(f"처리할 자막 파일이 없습니다: {input_folder}")
-			return
-
-		self.logger.info(f"발견된 자막 파일 수: {len(subtitle_files)}")
-
-		success_count = 0
-		fail_count = 0
-		skip_count = 0
-
-		converted_folder = f"{input_folder}/converted"
-		Path(converted_folder).mkdir(parents=True, exist_ok=True)
-
-		for file_path in subtitle_files:
+		for backup_folder in self._backup_folders:
 			try:
-				result = self.converter.convert_file(str(file_path), output_folder)
-				if (result):
-					success_count += 1
-					file_move(file_path, f"{converted_folder}/{Path(file_path).name}")
-				else:
-					skip_count += 1
+				Path(backup_folder).mkdir(parents=True, exist_ok=True)
+				backup_path = os.path.join(backup_folder, filename)
+				shutil.copy2(source_path, backup_path)
 			except Exception as e:
-				self.logger.error(f"파일 처리 실패: {file_path} - {e}")
-				fail_count += 1
-
-		self.logger.info("=" * 50)
-		self.logger.info(f"처리 완료: 성공 {success_count}개, 건너뜀 {skip_count}개, 실패 {fail_count}개")
-		self.logger.info("=" * 50)
-
+				self.logger.error(
+					f"백업 실패: {backup_folder} - {e}",
+					exc_info=True
+				)
+		self.logger.debug(f"백업 완료: {self._backup_folders}")
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -507,61 +567,35 @@ def parse_arguments() -> argparse.Namespace:
 	)
 
 	parser.add_argument(
-		'--output',
+		'--output_folder',
 		type=str,
 		help='변환된 파일을 저장할 폴더 경로 (기본값: 설정 파일 참조)'
 	)
 
 	parser.add_argument(
-		'--blank_time',
+		'--blank_time_seconds',
 		type=int,
 		help='빈 자막을 추가할 시간 간격 (초 단위, 기본값: 설정 파일 참조)'
+	)
+
+	parser.add_argument(
+		'--backup_folders',
+		type=str,
+		help='백업 폴더 목록 (쉼표로 구분, 기본값: 설정 파일 참조)'
 	)
 
 	return parser.parse_args()
 
 
 def main():
-	"""메인 함수"""
+	"""
+	메인 함수
+	"""
 	args = parse_arguments()
 
-	config_manager = ConfigManager(ConfigDef.CONFIG_PATH)
+	converter = SubtitleConverter()
+	converter.run(args)
 
-	logging_level = config_manager.get(
-		ConfigKey.LOGGING_LEVEL,
-		ConfigDef.LOGGING_LEVEL
-	)
-	blank_time_seconds = args.blank_time or config_manager.get(
-		ConfigKey.BLANK_TIME_SECONDS,
-		ConfigDef.BLANK_TIME_SECONDS
-	)
-	output_folder = args.output or config_manager.get(
-		ConfigKey.OUTPUT_FOLDER,
-		ConfigDef.OUTPUT_FOLDER
-	)
-
-	logger = createLogger(log_level=config_manager.get(ConfigKey.LOGGING_LEVEL, ConfigDef.LOGGING_LEVEL)
-			, log_filename='subtitle_convert'
-			, logger_name='subtitle_convert'
-	)
-
-	logger.info("=" * 50)
-	logger.info("자막 자동 변환 프로그램 시작")
-	logger.info("=" * 50)
-	logger.info(f"설정 파일: {ConfigDef.CONFIG_PATH}")
-	logger.info(f"로그 파일: {ConfigDef.LOG_PATH}")
-	logger.info(f"입력 폴더: {os.path.abspath(args.folder)}")
-	logger.info(f"출력 폴더: {os.path.abspath(output_folder)}")
-	logger.info(f"빈 자막 간격 임계값: {blank_time_seconds}초")
-	logger.info(f"로깅 레벨: {logging_level}")
-	logger.info("지원 형식: SMI, SRT")
-	logger.info("=" * 50)
-
-	gap_threshold_ms = blank_time_seconds * 1000
-	converter = SubtitleConverter(logger, gap_threshold_ms)
-
-	processor = SubtitleBatchProcessor(converter, logger)
-	processor.process_folder(args.folder, output_folder)
 
 
 if (__name__ == "__main__"):
