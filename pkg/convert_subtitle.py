@@ -332,10 +332,15 @@ class SubtitleConverter:
 							content = raw_content.decode('utf-16')
 							return content
 
-					content = raw_content.decode('euc-kr')
-					is_utf8 = False
+					content = raw_content.decode('cp949')
+				except UnicodeDecodeError:
+					# UTF-16 / CP949(MS949) 인코딩 실패
+					# CP949는 EUC-KR의 Microsoft 확장판으로 0x89, 0xC0 등
+					# EUC-KR 표준 범위 밖의 바이트를 포함하는 파일을 처리 가능
+					self.logger.warning('"UTF" / "cp949" decoding fail!', exc_info=True)
+					return None
 				except Exception as e:
-					self.logger.warning('"euc-kr" decoding fail!', exc_info=True)
+					self.logger.warning('content decoding fail!', exc_info=True)
 					return None
 
 			if (all(b < 0x80 for b in raw_content)):
@@ -344,10 +349,11 @@ class SubtitleConverter:
 			if (is_utf8):
 				ko_chars = sum(0xAC00 <= ord(ch) <= 0xD7A3 for ch in content)
 				if (ko_chars == 0):
-					content = raw_content.decode('euc-kr')
+					content = raw_content.decode('cp949')
 
 			return content
-		except Exception:
+		except Exception as e:
+			self.logger.error("convert_to_utf8() error: {e}", exc_info=True)
 			return None
 
 
