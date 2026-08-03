@@ -33,6 +33,7 @@ class SourceToMarkdownDef:
 		ENCODING (Final[str]): 파일 입출력에 사용할 인코딩입니다.
 		HIDDEN_PREFIX (Final[str]): 숨김 파일/폴더 판별 접두사입니다.
 		TIMESTAMP_FORMAT (Final[str]): 생성 시각 표기 형식입니다.
+		TIMESTAMP_FILE_FORMAT (Final[str]): 파일에 대한 생성 시각 표기 형식입니다.
 		HEADING_LEVEL_TITLE (Final[str]): 문서 제목 헤딩 레벨입니다.
 		HEADING_LEVEL_FILE (Final[str]): 파일 섹션 헤딩 레벨입니다.
 		DEFAULT_CODE_BLOCK_LANG (Final[str]): 확장자 미매핑 시 코드 블록 언어입니다.
@@ -45,6 +46,7 @@ class SourceToMarkdownDef:
 	ENCODING: Final[str] = "utf-8"
 	HIDDEN_PREFIX: Final[str] = "."
 	TIMESTAMP_FORMAT: Final[str] = "%Y-%m-%d %H:%M:%S"
+	TIMESTAMP_FILE_FORMAT: Final[str] = "%Y%m%d_%H%M"
 	HEADING_LEVEL_TITLE: Final[str] = "#"
 	HEADING_LEVEL_FILE: Final[str] = "##"
 	DEFAULT_CODE_BLOCK_LANG: Final[str] = "text"
@@ -100,6 +102,8 @@ class CollectorConfig:
 		"""
 		target_path = Path(args.path)
 		output_filename = args.md or f"{target_path.resolve().name}{SourceToMarkdownDef.MD_FILE_SUFFIX}"
+		generated_at = datetime.now().strftime(SourceToMarkdownDef.TIMESTAMP_FILE_FORMAT)
+		output_filename = f"{output_filename[:-3]}-{generated_at}{output_filename[-3:]}"
 		return cls(
 			target_path=target_path,
 			filter_pattern=args.filter,
