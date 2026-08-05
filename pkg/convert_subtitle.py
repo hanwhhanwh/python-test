@@ -45,7 +45,7 @@ class ConfigKey:
 class ConfigDef:
 	"""설정 기본값 정의"""
 	LOGGING_LEVEL: Final[int] = 20  # INFO
-	BLANK_TIME_SECONDS: Final[int] = 30  # 단위: 초
+	BLANK_TIME_SECONDS: Final[int] = 5  # 단위: 초
 	BLANK_GAP_MS: Final[int] = 300  # 단위: 밀리초
 	OUTPUT_FOLDER: Final[str] = "./subtitles/output"
 	BACKUP_FOLDERS: Final[str] = "./subtitles/backup"
@@ -473,8 +473,8 @@ class SubtitleConverter:
 				gap = subtitles[i + 1]['start'] - sub['end']
 
 				if (gap > self.gap_threshold_ms):
-					blank_start = sub['end'] + 1000
-					blank_end = blank_start + 2000
+					blank_start = sub['end'] + 100
+					blank_end = blank_start + 100
 					result.append({
 						'start': blank_start,
 						'end': blank_end,
